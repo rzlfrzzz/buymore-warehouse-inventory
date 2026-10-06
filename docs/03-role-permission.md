@@ -57,6 +57,7 @@ Keterangan: ✓ = diizinkan, kosong = tidak diizinkan.
 | `report.view` | | | ✓ | ✓ |
 | `audit.view` | | | | ✓ |
 | `master.view` (baca produk, satuan, lokasi, supplier) | ✓ | ✓ | ✓ | ✓ |
+| `shift.view` (lihat jadwal dan shift) | ✓ | ✓ | ✓ | ✓ |
 
 ### 2.3 Ekspor BigSeller
 
@@ -70,6 +71,7 @@ Keterangan: ✓ = diizinkan, kosong = tidak diizinkan.
 | Permission | Head | System Admin |
 |---|:-:|:-:|
 | `master.manage` (produk/SKU, satuan dan konversi, lokasi rak, supplier) | ✓ | |
+| `shift.manage` (definisi shift dan jadwal petugas, lihat `04-shift-system.md`) | ✓ | |
 | `user.manage` | | ✓ |
 | `role.assign` | | ✓ |
 | `warehouse.manage` | | ✓ |
