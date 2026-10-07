@@ -1,9 +1,112 @@
-import { useState } from 'react';
-import { FileSpreadsheet, Info, Download, ArrowRight } from 'lucide-react';
-import { DocumentTable } from '../components/tables/DocumentTable';
-import { downloadCsv } from '../utils/download';
-import { productById, type Document, type Session, type State } from '../services/warehouse';
-export function Export({ state, session, open, search }: { state: State; session: Session; open: (d: Document) => void; search: string }) {
-  const [type, setType] = useState('receiving'); const docs = state.documents.filter(d => d.warehouse === session.warehouse && d.status === 'VERIFIED' && d.kind === type && `${d.id} ${d.partner}`.toLowerCase().includes(search.toLowerCase()));
-  return <><div className="page-heading"><div className="eyebrow">KONEKSI KE BIGSELLER</div><h1>Siap untuk langkah berikutnya<span className="green-dot">.</span></h1><p>Tinjau transaksi terverifikasi sebelum proses impor satu arah.</p></div><div className="callout"><Info size={20}/><span><strong>Pratinjau frontend, bukan ekspor resmi.</strong> Template XLSX asli dan backend export job belum tersedia. Unduhan hanya ringkasan demo, tidak untuk diimpor ke BigSeller. Status dokumen tidak diubah menjadi Exported.</span></div><div className="export-options">{[['receiving','Pesanan pembelian','Material masuk dari supplier'],['issue','Pengurangan stok','Material keluar untuk produksi']].map(([id,title,description]) => <button key={id} className={`export-option ${type === id ? 'selected' : ''}`} onClick={() => setType(id)}><FileSpreadsheet size={27}/><div><h3>{title}</h3><p>{description}</p></div><ArrowRight size={19}/></button>)}</div><section className="panel"><div className="panel-heading"><div><h3>Dokumen siap ditinjau</h3><p>{docs.length} dokumen / {session.warehouse}</p></div><button className="button secondary" disabled={!docs.length} onClick={() => downloadCsv(`PRATINJAU-BUKAN-IMPOR-${type}.csv`, ['Dokumen','SKU BigSeller','Kuantitas dasar','Satuan','Supplier / tujuan'], docs.flatMap(d => d.lines.map(l => [d.id,productById(l.product).sku,l.quantity,productById(l.product).unit,d.partner])))}><Download size={16}/>Unduh ringkasan demo</button></div><DocumentTable documents={docs} open={open}/></section><p className="muted export-note">Adjustment dari stock count belum masuk pratinjau: jalur ekspor selisih positif masih merupakan keputusan terbuka pada dokumen bisnis.</p></>;
+import { useState } from "react";
+import { FileSpreadsheet, Info, Download, ArrowRight } from "lucide-react";
+import { DocumentTable } from "../components/tables/DocumentTable";
+import { downloadCsv } from "../utils/download";
+import {
+  productById,
+  type Document,
+  type Session,
+  type State,
+} from "../services/warehouse";
+export function Export({
+  state,
+  session,
+  open,
+  search,
+}: {
+  state: State;
+  session: Session;
+  open: (d: Document) => void;
+  search: string;
+}) {
+  const [type, setType] = useState("receiving");
+  const docs = state.documents.filter(
+    (d) =>
+      d.warehouse === session.warehouse &&
+      d.status === "VERIFIED" &&
+      d.kind === type &&
+      `${d.id} ${d.partner}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  return (
+    <>
+      <div className="page-heading">
+        <div className="eyebrow">KONEKSI KE BIGSELLER</div>
+        <h1>
+          Siap untuk langkah berikutnya<span className="green-dot">.</span>
+        </h1>
+        <p>Tinjau transaksi terverifikasi sebelum proses impor satu arah.</p>
+      </div>
+      <div className="callout">
+        <Info size={20} />
+        <span>
+          <strong>Pratinjau frontend, bukan ekspor resmi.</strong> Template XLSX
+          asli dan backend export job belum tersedia. Unduhan hanya ringkasan
+          demo, tidak untuk diimpor ke BigSeller. Status dokumen tidak diubah
+          menjadi Exported.
+        </span>
+      </div>
+      <div className="export-options">
+        {[
+          ["receiving", "Pesanan pembelian", "Material masuk dari supplier"],
+          ["issue", "Pengurangan stok", "Material keluar untuk produksi"],
+        ].map(([id, title, description]) => (
+          <button
+            key={id}
+            className={`export-option ${type === id ? "selected" : ""}`}
+            onClick={() => setType(id)}
+          >
+            <FileSpreadsheet size={27} />
+            <div>
+              <h3>{title}</h3>
+              <p>{description}</p>
+            </div>
+            <ArrowRight size={19} />
+          </button>
+        ))}
+      </div>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h3>Dokumen siap ditinjau</h3>
+            <p>
+              {docs.length} dokumen / {session.warehouse}
+            </p>
+          </div>
+          <button
+            className="button secondary"
+            disabled={!docs.length}
+            onClick={() =>
+              downloadCsv(
+                `PRATINJAU-BUKAN-IMPOR-${type}.csv`,
+                [
+                  "Dokumen",
+                  "SKU BigSeller",
+                  "Kuantitas dasar",
+                  "Satuan",
+                  "Supplier / tujuan",
+                ],
+                docs.flatMap((d) =>
+                  d.lines.map((l) => [
+                    d.id,
+                    productById(l.product).sku,
+                    l.quantity,
+                    productById(l.product).unit,
+                    d.partner,
+                  ]),
+                ),
+              )
+            }
+          >
+            <Download size={16} />
+            Unduh ringkasan demo
+          </button>
+        </div>
+        <DocumentTable documents={docs} open={open} />
+      </section>
+      <p className="muted export-note">
+        Adjustment dari stock count belum masuk pratinjau: jalur ekspor selisih
+        positif masih merupakan keputusan terbuka pada dokumen bisnis.
+      </p>
+    </>
+  );
 }

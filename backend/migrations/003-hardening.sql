@@ -1,0 +1,30 @@
+CREATE INDEX ledger_balance_lookup ON inventory_ledger(warehouse,location,product,batch) INCLUDE(delta);
+CREATE INDEX count_listing ON stock_counts(warehouse,started_at DESC,id);
+CREATE INDEX count_assignment_listing ON stock_counts(warehouse,counted_by,started_at DESC,id);
+CREATE INDEX sessions_user ON sessions(user_id);
+CREATE INDEX login_attempt_expiry ON login_attempts(reset_at);
+CREATE TABLE products(code text PRIMARY KEY,name text NOT NULL,active boolean NOT NULL DEFAULT true,legacy boolean NOT NULL DEFAULT false,
+ CHECK(legacy OR (code=upper(btrim(code)) AND code ~ '^[A-Z0-9][A-Z0-9._-]{0,63}$')));
+INSERT INTO products(code,name,legacy) SELECT product,product,true FROM (SELECT product FROM inventory_ledger UNION SELECT product FROM stock_count_lines UNION SELECT product FROM adjustment_lines) p;
+CREATE TABLE product_batches(product text REFERENCES products(code),batch text NOT NULL,legacy boolean NOT NULL DEFAULT false,PRIMARY KEY(product,batch),CHECK(legacy OR (batch=btrim(batch) AND length(batch)<=100)));
+INSERT INTO product_batches(product,batch,legacy) SELECT product,batch,true FROM (SELECT product,batch FROM inventory_ledger UNION SELECT product,batch FROM stock_count_lines UNION SELECT product,batch FROM adjustment_lines) b;
+ALTER TABLE inventory_ledger ADD FOREIGN KEY(product,batch) REFERENCES product_batches(product,batch);
+ALTER TABLE stock_count_lines ADD FOREIGN KEY(product,batch) REFERENCES product_batches(product,batch);
+ALTER TABLE adjustment_lines ADD FOREIGN KEY(product,batch) REFERENCES product_batches(product,batch);
+CREATE TRIGGER ledger_no_truncate BEFORE TRUNCATE ON inventory_ledger EXECUTE FUNCTION deny_mutation();
+CREATE TRIGGER audit_no_truncate BEFORE TRUNCATE ON audit_events EXECUTE FUNCTION deny_mutation();
+CREATE TRIGGER adjustment_lines_no_truncate BEFORE TRUNCATE ON adjustment_lines EXECUTE FUNCTION deny_mutation();
+CREATE TRIGGER counts_no_truncate BEFORE TRUNCATE ON stock_counts EXECUTE FUNCTION deny_mutation();
+CREATE TRIGGER count_lines_no_truncate BEFORE TRUNCATE ON stock_count_lines EXECUTE FUNCTION deny_mutation();
+CREATE TRIGGER adjustments_no_truncate BEFORE TRUNCATE ON adjustments EXECUTE FUNCTION deny_mutation();
+ALTER TABLE sessions ADD COLUMN last_seen_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE command_receipts ADD COLUMN created_at timestamptz NOT NULL DEFAULT now();
+CREATE TABLE security_events(id uuid PRIMARY KEY,event text NOT NULL,actor uuid REFERENCES users(id),warehouse text,ip text NOT NULL,request_id uuid NOT NULL,status integer NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX security_events_time ON security_events(created_at);
+CREATE TRIGGER security_immutable BEFORE UPDATE OR DELETE ON security_events FOR EACH ROW EXECUTE FUNCTION deny_mutation();
+CREATE TRIGGER security_no_truncate BEFORE TRUNCATE ON security_events EXECUTE FUNCTION deny_mutation();
+CREATE FUNCTION guard_safe_balance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF COALESCE((SELECT sum(delta) FROM inventory_ledger WHERE warehouse=NEW.warehouse AND location=NEW.location AND product=NEW.product AND batch=NEW.batch),0)+NEW.delta>2147483647 THEN RAISE EXCEPTION 'Stock exceeds supported base quantity'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER ledger_safe_balance BEFORE INSERT ON inventory_ledger FOR EACH ROW EXECUTE FUNCTION guard_safe_balance();

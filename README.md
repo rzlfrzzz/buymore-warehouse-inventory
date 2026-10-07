@@ -93,3 +93,6 @@ Verified in this environment: backend 4 tests passed, frontend 17 tests passed, 
 ## Structure
 
 `backend/src/api.ts` HTTP/auth boundary; `auth.ts` password helpers; `runtime.ts` PostgreSQL/PGlite migrations; `stock-count.ts` transactional domain; `server.ts` localhost entry; `seed.ts` explicit development provisioning. `frontend/src/pages/ConnectedWorkspace.tsx` is the active application, with `services/api.ts` handling HTTP. The earlier `App.tsx` and demo screens are retained but not routed. Fonts follow the existing design; offline fallbacks apply.
+
+## Production hardening
+Lihat [panduan deployment dan batas verifikasi](docs/production-hardening.md). Panduan ini menggantikan batas katalog/throttle/deployment lama; jangan memakai compose development untuk produksi.

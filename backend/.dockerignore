@@ -1,0 +1,6 @@
+node_modules
+dist
+.data
+.api-test-data
+.env*
+coverage
