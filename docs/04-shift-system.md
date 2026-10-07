@@ -39,44 +39,47 @@ Shift boleh **melewati tengah malam** (contoh 22:00 sampai 06:00). Untuk shift
 seperti ini, `shift_date` mengikuti **tanggal mulai shift**, bukan tanggal
 kalender saat transaksi terjadi.
 
-### 2.2 Jadwal petugas (`shift_assignments`)
+### 2.2 Jadwal petugas (`user_shifts`)
 
-Jadwal petugas adalah **komponen inti** sistem shift. Jadwal mencatat siapa
-yang bertugas pada shift tertentu di tanggal tertentu.
+Jadwal petugas adalah **komponen inti** sistem shift. Jadwal memakai
+**rentang tanggal** (`effective_from` sampai `effective_to`), bukan satu baris
+per hari. Penugasan berlaku terus sampai diakhiri atau diganti.
 
 | Field | Keterangan |
 |---|---|
 | `id` | Primary key |
-| `warehouse_id` | Gudang |
-| `shift_id` | Shift yang dijadwalkan |
 | `user_id` | Petugas |
-| `date` | Tanggal shift (`shift_date`, tanggal mulai shift) |
-| `role_on_shift` | Peran saat bertugas (Checker, Staff, Admin, Head), diambil dari role user di gudang tersebut |
-| `created_by` | Yang menyusun jadwal |
+| `shift_id` | Shift yang dijadwalkan |
+| `warehouse_id` | Gudang. Harus sama dengan gudang milik `shift_id` (dijaga FK komposit) |
+| `effective_from` | Tanggal mulai berlaku |
+| `effective_to` | Tanggal terakhir berlaku. `NULL` = berlaku seterusnya |
 
-Aturan:
+Aturan (semua ditegakkan di database, lihat `002_warehouse_batch_export_integrity.sql`):
 
-1. **Satu user hanya boleh dijadwalkan di satu shift pada tanggal yang sama**
-   dalam satu gudang. Jadwal di gudang berbeda boleh, selama jam shift-nya tidak
-   bertabrakan.
-2. **User hanya bisa dijadwalkan di gudang tempat ia punya role** (lihat
-   `user_warehouse_roles` di `03-role-permission.md`).
+1. **Satu user hanya satu shift pada rentang yang sama per gudang.** Rentang
+   yang tumpang tindih ditolak (exclusion constraint).
+2. **User hanya bisa dijadwalkan di gudang tempat ia punya role** pada periode
+   tersebut (lihat `user_roles` di `03-role-permission.md`).
 3. **Jadwal tidak membatasi akses.** User yang tidak terjadwal tetap bisa
    membuat transaksi. Jadwal tidak menentukan siapa yang boleh bekerja.
-4. **Jadwal yang sudah lewat tidak boleh diubah diam-diam.** Perubahan pada
-   tanggal yang sudah berlalu wajib mencatat alasan di audit log, supaya
-   perbandingan jadwal dan aktual tetap dapat dipercaya.
+4. **Pindah shift = akhiri rentang lama, buat rentang baru.** Contoh: shift 1
+   sampai 31 Okt, shift 2 mulai 1 Nov. Rentang tidak boleh dihapus untuk
+   menyembunyikan riwayat; perubahan pada tanggal yang sudah lewat wajib
+   dicatat di audit log beserta alasan (ditegakkan di aplikasi).
+5. Jadwal di gudang berbeda boleh dimiliki satu user, masing-masing dengan
+   rentangnya sendiri.
 
 Fitur penyusunan jadwal yang direkomendasikan:
 
-- Tampilan kalender mingguan per gudang (shift x hari x petugas).
-- **Salin jadwal minggu lalu** untuk mengisi minggu berikutnya dengan cepat.
+- Tampilan kalender per gudang (shift x tanggal x petugas) yang dibaca dari
+  rentang tanggal.
 - Peringatan (bukan blokir) jika suatu shift tidak punya Checker atau Admin
-  yang dijadwalkan.
+  yang dijadwalkan pada tanggal tertentu.
 
 ### 2.3 Label pada transaksi
 
-Tabel berikut memiliki kolom `shift_id` dan `shift_date`:
+Tabel berikut akan memiliki kolom `shift_id` dan `shift_date` (belum ada di
+migration 002; direncanakan di migration berikutnya):
 
 - `receiving`, `issue`, `stock_count`, `adjustment`
 - `export_batches`
@@ -136,8 +139,10 @@ jadwal shift belum lengkap.
 ## 6. Keputusan yang Masih Terbuka
 
 1. **Siapa yang menyusun jadwal petugas:** Head saja, atau Admin juga?
-2. **Apakah satu user boleh dijadwalkan dua shift berurutan** pada hari yang
-   sama (lembur), atau harus dicatat sebagai pengecualian?
+2. **Lembur dan tukar shift satu hari:** dengan rentang tanggal, satu user tidak
+   bisa punya dua shift pada tanggal yang sama. Usulan: pengecualian satu hari
+   dicatat dengan memecah rentang lama (rentang 1 hari untuk shift pengganti),
+   atau ditambahkan tabel `shift_overrides` pada migration berikutnya.
 3. **Zona waktu:** apakah semua gudang berada di zona waktu yang sama?
 4. **Perubahan definisi shift** hanya berlaku untuk transaksi baru
    (direkomendasikan), tanpa mengubah data lama.
