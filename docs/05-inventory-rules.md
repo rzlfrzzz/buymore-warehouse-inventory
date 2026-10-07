@@ -80,12 +80,19 @@ Aturan:
 5. Tidak ada pembulatan pada transaksi mana pun. Karena itu saldo aplikasi dan
    BigSeller selalu sama persis.
 
-> **Perhatian untuk kain dan benang:** barang sering diterima dalam kemasan
-> yang ukurannya tidak seragam (satu roll kain bisa 48 atau 52 meter, satu cone
-> benang berbeda beratnya). Karena itu **Roll dan Cone tidak dibuat sebagai
-> satuan turunan dengan faktor konversi tetap.** Saat penerimaan, Checker
-> memasukkan panjang atau berat aktual per roll/cone, dan identitas roll/cone
-> dicatat sebagai batch atau catatan (lihat bagian 11).
+> **Kain dan benang dilacak sebagai total, bukan per roll/cone.** Barang sering
+> diterima dalam kemasan yang ukurannya tidak seragam (satu roll kain bisa 48
+> atau 52 meter, satu cone benang berbeda beratnya). Karena itu:
+>
+> 1. **Roll dan Cone tidak dibuat sebagai satuan turunan** dengan faktor
+>    konversi tetap.
+> 2. Stok dicatat sebagai **total panjang atau berat per SKU per lokasi**.
+>    Roll dan cone tidak punya identitas, kode, atau saldo sendiri.
+> 3. Saat penerimaan, Checker memasukkan **total panjang atau berat aktual**
+>    seluruh kiriman untuk SKU tersebut (jumlah dari semua roll/cone).
+> 4. Jumlah roll/cone boleh dicatat sebagai **catatan teks bebas** pada baris
+>    penerimaan sebagai informasi, tetapi tidak memengaruhi saldo.
+> 5. Issue mengurangi total panjang atau berat, tidak memilih roll tertentu.
 
 ---
 
@@ -248,21 +255,19 @@ Konsekuensi:
 
 ## 11. Keputusan yang Masih Terbuka
 
-1. **Roll kain dan cone benang:** apakah perlu melacak tiap roll/cone sebagai
-   identitas sendiri (kode roll, sisa panjang), atau cukup total panjang/berat
-   per SKU dan lokasi? Jika perlu, kode roll bisa memakai mekanisme batch
-   sehingga satu roll = satu batch dengan kuantitas Cm-nya sendiri.
-   *(Material pecahan sendiri sudah diputuskan: satuan dasar kecil, lihat 2.1.)*
-2. **Waktu posting ledger:** rekomendasi di atas adalah saat `Verified`.
+**Sudah diputuskan:** material pecahan memakai satuan dasar kecil (bagian 2.1),
+dan kain/benang dilacak sebagai total per SKU per lokasi, bukan per roll/cone.
+
+1. **Waktu posting ledger:** rekomendasi di atas adalah saat `Verified`.
    Alternatifnya posting saat `Submitted` agar stok langsung berkurang.
-3. **Penanganan `COUNT_ADJ_PLUS`:** template pengurangan stok tidak bisa
+2. **Penanganan `COUNT_ADJ_PLUS`:** template pengurangan stok tidak bisa
    menambah stok. Kelebihan stok dari stock count perlu jalur lain (misalnya
    PO import terpisah atau penyesuaian manual di BigSeller).
-4. **Transfer antar gudang:** apakah diperlukan, dan bagaimana mencatatnya ke
+3. **Transfer antar gudang:** apakah diperlukan, dan bagaimana mencatatnya ke
    BigSeller?
-5. **Batch kedaluwarsa:** boleh di-issue dengan konfirmasi (usulan di atas),
+4. **Batch kedaluwarsa:** boleh di-issue dengan konfirmasi (usulan di atas),
    atau diblokir total?
-6. **Reservasi untuk produksi:** apakah material perlu "dipesan" sebelum
+5. **Reservasi untuk produksi:** apakah material perlu "dipesan" sebelum
    dikeluarkan, atau issue langsung saat pemakaian?
-7. **Nomor batch dari supplier** apakah selalu ada, atau Checker perlu
+6. **Nomor batch dari supplier** apakah selalu ada, atau Checker perlu
    membuat kode batch internal?
