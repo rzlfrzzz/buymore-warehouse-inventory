@@ -208,10 +208,10 @@ seri harus berstatus `in_stock`.
 |---|---|
 | Receiving | `Verified` |
 | Issue | `Verified` |
-| Adjustment | `Approved` |
+| Adjustment | `POSTED` (approval dan posting atomik) |
 
 Dokumen `Draft`, `Submitted`, dan `Cancelled` tidak memengaruhi saldo fisik.
-Dokumen `Exported` terkunci.
+Dokumen posted/selesai terkunci sejak posting, meski belum Exported. Koreksi lewat dokumen baru terkait.
 
 ---
 

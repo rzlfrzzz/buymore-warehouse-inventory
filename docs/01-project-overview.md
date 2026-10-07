@@ -114,8 +114,8 @@ pembangunan:
    stok tidak bisa menambah).
 3. **Hasil uji impor BigSeller** (CSV, SKU baru, harga, nomor pembelian unik,
    format tanggal), lihat `08-bigseller-export.md` bagian 9.
-4. **Cakupan dan frekuensi stock count:** hitung penuh atau cycle count.
-5. **Ambang adjustment dan selisih** yang butuh persetujuan tambahan.
+4. **Penjadwalan stock count:** kebijakan harian kritis/pergerakan tinggi, sampling mingguan, bulanan penuh/parsial dan ad-hoc disepakati; kalender rinci menyusul (06).
+5. **Ambang investigasi tambahan:** semua adjustment tetap membutuhkan Head; tidak ada auto-approval selisih kecil.
 6. **Perlukah menyimpan harga** pada penerimaan.
 7. **Teknologi aplikasi:** hanya PostgreSQL dan Docker yang sudah pasti (dari
    struktur folder dan migration); bahasa dan framework frontend/backend belum

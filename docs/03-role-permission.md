@@ -93,8 +93,8 @@ Keterangan: ✓ = diizinkan, kosong = tidak diizinkan.
    Staff tidak memiliki `inventory.view` maupun `inventory.lookup`.
 4. **Checker hanya melihat saldo lewat pencarian** saat input issue, tanpa akses
    ke halaman inventori penuh.
-5. **Hanya dokumen berstatus `Verified` (atau `Approved` untuk stock count)
-   yang boleh diekspor.**
+5. **Hanya receiving/issue `Verified` atau adjustment `POSTED`
+   yang boleh diekspor; hasil count sendiri bukan sumber ekspor, hanya adjustment POSTED.**
 6. **Satu dokumen tidak boleh terekspor dua kali.** Setiap ekspor dicatat
    sebagai export batch (siapa, kapan, file, daftar dokumen). Ekspor ulang
    hanya lewat aksi eksplisit dan tercatat di audit log.
@@ -112,14 +112,14 @@ Receiving / Issue
   Draft -> Submitted (Checker) -> Verified (Admin / Head) -> Exported (Head)
 
 Stock Count
-  Draft -> Counted (Staff) -> Verified (Admin) -> Approved (Head)
-        -> Adjustment dibuat -> Adjustment Approved (Head) -> Exported (Head)
+  Counting -> Counted (Staff) -> Verified (Admin) -> Approved (Head)
+        -> Adjustment PENDING -> POSTED (approval + posting atomik oleh Head) -> Exported (Head)
 
 Pembatalan: dokumen dapat dibatalkan (Cancelled) sebelum Exported,
 oleh pembuat (saat Draft) atau Admin/Head (setelah Submitted), dengan alasan wajib.
 ```
 
-Dokumen yang sudah `Exported` bersifat terkunci. Koreksi dilakukan lewat
+Untuk stock count, cancel hanya sebelum posting sesuai dokumen 06. Count selesai dan adjustment POSTED sudah terkunci sebelum ekspor. Dokumen yang sudah `Exported` bersifat terkunci. Koreksi dilakukan lewat
 dokumen baru (adjustment), bukan dengan mengubah dokumen lama.
 
 ---
@@ -138,9 +138,7 @@ dokumen baru (adjustment), bukan dengan mengubah dokumen lama.
 
 ## 6. Keputusan yang Masih Terbuka
 
-1. **Ambang adjustment:** apakah `adjustment.approve` selalu wajib, atau selisih
-   kecil (di bawah nilai/persentase tertentu) otomatis lolos setelah
-   `stock_count.approve`?
+1. **Ambang eskalasi investigasi:** semua selisih tetap memerlukan approval Head dan posting adjustment terpisah; hanya eskalasi tambahan yang belum diputuskan.
 2. **Verifikasi receiving oleh Head:** Head boleh `receiving.verify`. Apakah
    Head tetap harus berbeda dari pembuat dokumen? (Direkomendasikan: ya, sudah
    tercakup aturan 1.)

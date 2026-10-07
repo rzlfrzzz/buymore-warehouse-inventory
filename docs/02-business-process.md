@@ -40,7 +40,7 @@ Semua langkah dicatat di audit log (lihat `07-audit-rules.md`).
 ## 2. Kapan Stok Berubah
 
 Stok di aplikasi berubah **saat dokumen diverifikasi** (receiving dan issue)
-atau **saat adjustment disetujui** (hasil stock count). Dokumen Draft,
+atau **saat adjustment disetujui dan diposting atomik (POSTED)** (hasil stock count). Dokumen Draft,
 Submitted, Rejected, dan Cancelled tidak mengubah saldo.
 
 Agar dua Checker tidak mengeluarkan stok yang sama, saldo yang **tersedia** untuk
@@ -164,8 +164,8 @@ Perpindahan antar **gudang** tidak tercakup pada versi ini.
 | 4 | Admin melihat selisih, meminta hitung ulang untuk item tertentu bila perlu, mengisi alasan selisih | Admin |
 | 5 | Verifikasi hasil (Verified). **Admin tidak boleh pembuat dokumen** | Admin |
 | 6 | Head menyetujui (Approved). **Head tidak boleh pembuat atau penghitung** | Head |
-| 7 | Sistem membuat adjustment per item selisih | Sistem |
-| 8 | Head menyetujui atau menolak adjustment. Yang disetujui mengubah saldo lewat ledger | Head |
+| 7 | Sistem membuat satu dokumen adjustment terpisah dengan baris per item selisih nonnol | Sistem |
+| 8 | Head menyetujui dan posting adjustment secara atomik (POSTED), baru membuka freeze. Penolakan membatalkan count dan adjustment beralasan sebelum posting | Head |
 | 9 | Adjustment minus masuk antrean ekspor pengurangan stok. Adjustment plus **belum punya jalur BigSeller** | Head |
 
 ---

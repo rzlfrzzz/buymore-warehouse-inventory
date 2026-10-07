@@ -1,0 +1,11 @@
+import { openDatabase, migrate } from './runtime.js';
+import { createApi } from './api.js';
+const db=await openDatabase();
+await migrate(db);
+const production=process.env.NODE_ENV==='production';
+const origin=process.env.APP_ORIGIN || 'http://127.0.0.1:5173';
+if(production && !origin.startsWith('https://')) throw new Error('Production requires HTTPS APP_ORIGIN');
+const server=await createApi(db,{origin,secureCookies:production});
+const port=Number(process.env.PORT || 3001);
+server.listen(port,'127.0.0.1',()=>console.log(`Warehouse API http://127.0.0.1:${port} (${process.env.DB_MODE==='pglite'?'PGlite local development':'PostgreSQL'})`));
+for(const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>server.close(()=>{ void db.close().then(()=>process.exit(0)); }));

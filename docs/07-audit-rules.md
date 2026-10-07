@@ -117,7 +117,7 @@ ada kode liar.
 | `stock_count.submit`, `stock_count.recount_request`, `stock_count.recount_submit` | Permintaan hitung ulang wajib beralasan |
 | `stock_count.verify`, `stock_count.approve`, `stock_count.cancel` | |
 | `stock_count.system_qty_viewed` | Admin atau Head melihat saldo sistem saat dokumen `COUNTING` |
-| `adjustment.create`, `adjustment.approve`, `adjustment.reject` | Reject wajib beralasan |
+| `adjustment.create`, `adjustment.approve_post`, `adjustment.reject` | Reject wajib beralasan |
 
 ### 3.6 Ekspor BigSeller
 
@@ -286,3 +286,5 @@ dinonaktifkan, bukan dihapus, agar riwayat tetap terbaca.
    perlu dicatat, atau cukup aksi sensitif yang disebut di bagian 3.
 6. **Peringatan otomatis:** lewat apa (dalam aplikasi saja, atau juga email /
    pesan), dan siapa penerima cadangan bila Head tidak ada.
+
+Implementasi minimal backend mencatat approval count beserta pembuatan adjustment dalam event stock_count.approve; adjustment.approve_post menyatukan approval/posting. Audit lengkap perangkat, shift, before/after dan view events masih target integrasi; lihat 06.

@@ -24,7 +24,7 @@ Sumber pemetaan adalah dua template yang diunggah ke project:
 2. **Hanya Head yang mengekspor** (`export.purchase_order`,
    `export.stock_reduction`). Head adalah pemegang akun BigSeller.
 3. **Hanya dokumen yang sudah disetujui:** receiving dan issue berstatus
-   `VERIFIED`, adjustment berstatus `APPROVED`.
+   `VERIFIED`, adjustment berstatus `POSTED`.
 4. **Satu dokumen hanya terekspor sekali.** Ditegakkan di database lewat
    `export_job_items` (migration 002). Ekspor ulang hanya lewat pelepasan
    terkontrol dengan alasan dan tercatat di audit log.
@@ -133,7 +133,7 @@ Sheet `SKU`, kolom A sampai C **[Terkonfirmasi]**.
 | Kol | Header template | Sumber di aplikasi | Aturan |
 |---|---|---|---|
 | A | `*Nomor SKU` | `bigseller_mappings.bigseller_sku` | Teks. Wajib terpetakan dan terdaftar |
-| B | `*Jumlah Pengurangan Stok` | Jumlah `issue_items.base_qty` (issue `VERIFIED`) dan selisih minus (adjustment `APPROVED`) | Lihat format kuantitas di 4.2 |
+| B | `*Jumlah Pengurangan Stok` | Jumlah `issue_items.base_qty` (issue `VERIFIED`) dan selisih minus (adjustment `POSTED`) | Lihat format kuantitas di 4.2 |
 | C | `Nomor Seri` | `serial_numbers.serial_no` | Hanya untuk produk `track_serial`. Format banyak serial **[Uji]** |
 
 ### 4.1 Aturan pengelompokan baris
@@ -194,7 +194,7 @@ dengan pesan yang menyebut produk dan satuannya.
 Head memilih gudang + jenis ekspor
         |
         v
-Daftar dokumen siap ekspor (VERIFIED / APPROVED, belum EXPORTED)
+Daftar dokumen siap ekspor (VERIFIED / POSTED, belum EXPORTED)
         |
         v
 Pratinjau: baris, total per SKU, peringatan dan error validasi
@@ -239,7 +239,7 @@ Poin penting:
 
 | Validasi | Berlaku untuk |
 |---|---|
-| Dokumen berstatus `VERIFIED` (receiving, issue) atau `APPROVED` (adjustment) | Semua |
+| Dokumen berstatus `VERIFIED` (receiving, issue) atau `POSTED` (adjustment) | Semua |
 | Dokumen belum punya keterkaitan ekspor aktif | Semua |
 | Dokumen dan job berada di gudang yang sama | Semua |
 | SKU terpetakan dan `is_registered = true` | Semua |

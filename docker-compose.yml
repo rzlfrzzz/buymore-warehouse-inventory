@@ -1,1 +1,20 @@
-
+# Database only. Run the localhost API and Vite using README instructions.
+# Keep the named volume for persistence; do not use `down -v` for normal shutdown.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: buymore
+      POSTGRES_USER: buymore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buymore -d buymore"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  postgres_data:
