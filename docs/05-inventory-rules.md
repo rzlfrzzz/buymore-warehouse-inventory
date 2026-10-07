@@ -41,13 +41,51 @@ Aturan:
 
 1. Input boleh multi satuan (contoh: 4 Dus + 3 Kotak + 1 Pcs). Backend
    mengonversi ke satuan dasar sebelum masuk ledger.
-2. Kuantitas pada ledger adalah **bilangan bulat satuan dasar**. Jika ada
-   material yang dihitung pecahan (kg, meter), satuan dasarnya harus dipilih
-   cukup kecil (gram, cm) atau dibuat tipe desimal. Lihat bagian 11.
+2. Kuantitas pada ledger adalah **bilangan bulat satuan dasar**. Material yang
+   dihitung pecahan ditangani dengan memilih satuan dasar yang cukup kecil
+   (lihat bagian 2.1).
 3. Konversi satuan pada produk yang **sudah punya riwayat transaksi tidak boleh
    diubah** tanpa persetujuan khusus Head.
 4. Satuan nonaktif tidak bisa dipakai untuk transaksi baru, tetapi riwayat lama
    tetap terbaca.
+
+### 2.1 Material yang Dihitung Pecahan
+
+BigSeller hanya menerima bilangan bulat, sedangkan material seperti kain,
+benang, dan pelumas sering dihitung pecahan. Solusinya: **satuan dasar dibuat
+cukup kecil sehingga semua kuantitas menjadi bilangan bulat**, baik di aplikasi
+maupun di BigSeller. Satuan besar dibuat sebagai satuan turunan.
+
+| Jenis material | Satuan dasar | Satuan turunan | Presisi input |
+|---|---|---|---|
+| Kain | Cm | Meter (1 Meter = 100 Cm) | 1 Cm |
+| Benang (curah/berat) | Gram | Kg (1 Kg = 1000 Gram) | 1 Gram |
+| Pelumas dan cairan | Ml | Liter (1 Liter = 1000 Ml) | 1 Ml |
+| Aksesoris dan material penunjang | Pcs | Kotak, Dus | 1 Pcs |
+
+Aturan:
+
+1. **Satuan dasar di aplikasi harus sama dengan satuan dasar SKU di
+   BigSeller.** Jika SKU di BigSeller masih memakai Meter atau Kg sebagai
+   satuan dasar, SKU itu harus diubah atau dibuat ulang dengan satuan dasar
+   kecil sebelum dipakai di aplikasi.
+2. Checker tetap mengetik dalam satuan yang nyaman (contoh `2,5 Meter`). UI
+   mengonversi ke satuan dasar (250 Cm) sebelum disimpan. Ledger tidak pernah
+   menyimpan pecahan.
+3. Setiap produk punya `qty_precision`, yaitu kelipatan satuan dasar yang
+   boleh diinput. Input yang tidak sesuai presisi ditolak.
+4. Ekspor memakai format multi satuan, contoh 250 Cm diekspor sebagai
+   `2 Meter 50 Cm`. **Wajib diuji di BigSeller** bahwa konversi satuan pada SKU
+   berlaku saat impor, sebelum fitur ekspor dianggap selesai.
+5. Tidak ada pembulatan pada transaksi mana pun. Karena itu saldo aplikasi dan
+   BigSeller selalu sama persis.
+
+> **Perhatian untuk kain dan benang:** barang sering diterima dalam kemasan
+> yang ukurannya tidak seragam (satu roll kain bisa 48 atau 52 meter, satu cone
+> benang berbeda beratnya). Karena itu **Roll dan Cone tidak dibuat sebagai
+> satuan turunan dengan faktor konversi tetap.** Saat penerimaan, Checker
+> memasukkan panjang atau berat aktual per roll/cone, dan identitas roll/cone
+> dicatat sebagai batch atau catatan (lihat bagian 11).
 
 ---
 
@@ -210,9 +248,11 @@ Konsekuensi:
 
 ## 11. Keputusan yang Masih Terbuka
 
-1. **Material pecahan:** apakah ada material yang dihitung desimal (kg, meter,
-   liter)? Jika ya, tentukan kuantitas desimal (misal 3 angka di belakang
-   koma) atau satuan dasar yang lebih kecil.
+1. **Roll kain dan cone benang:** apakah perlu melacak tiap roll/cone sebagai
+   identitas sendiri (kode roll, sisa panjang), atau cukup total panjang/berat
+   per SKU dan lokasi? Jika perlu, kode roll bisa memakai mekanisme batch
+   sehingga satu roll = satu batch dengan kuantitas Cm-nya sendiri.
+   *(Material pecahan sendiri sudah diputuskan: satuan dasar kecil, lihat 2.1.)*
 2. **Waktu posting ledger:** rekomendasi di atas adalah saat `Verified`.
    Alternatifnya posting saat `Submitted` agar stok langsung berkurang.
 3. **Penanganan `COUNT_ADJ_PLUS`:** template pengurangan stok tidak bisa
