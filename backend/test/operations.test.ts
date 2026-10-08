@@ -711,3 +711,135 @@ test("template-backed export is durable, scoped, idempotent and rejects duplicat
     await db.close();
   }
 });
+
+test("Head onboarding through HTTP produces persisted receiving stock without catalog SQL", async () => {
+  const { db, server, request, login } = await fixture();
+  try {
+    const head = await login("head"),
+      checker = await login("checker"),
+      admin = await login("admin"),
+      staff = await login("staff");
+    const product = {
+      code: "NEW",
+      name: "New product",
+      uom: "BOX",
+      uomFactor: 6,
+      trackBatch: true,
+      trackExpiry: true,
+    };
+    for (const cookie of [checker, admin, staff]) {
+      for (const [kind, data] of [
+        ["products", product],
+        ["locations", { id: "NEW-LOC" }],
+        ["batches", { product: "NEW", batch: "LOT" }],
+      ] as const)
+        assert.equal(
+          (await request(`/api/operations/${kind}`, cookie, data)).status,
+          403,
+        );
+    }
+    const key = randomUUID();
+    assert.equal(
+      (await request("/api/operations/products", head, product, "POST", key))
+        .status,
+      201,
+    );
+    assert.equal(
+      (await request("/api/operations/products", head, product, "POST", key))
+        .status,
+      201,
+    );
+    assert.equal(
+      (await request("/api/operations/products", head, product)).status,
+      409,
+    );
+    assert.equal(
+      (
+        await request("/api/operations/products", head, {
+          ...product,
+          code: "INVALID",
+          uomFactor: 0,
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await request("/api/operations/locations", head, { id: "NEW-LOC" }))
+        .status,
+      201,
+    );
+    assert.equal(
+      (
+        await request("/api/operations/batches", head, {
+          product: "NEW",
+          batch: "LOT",
+          expiry: "2027-02-30",
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await request("/api/operations/batches", head, {
+          product: "NEW",
+          batch: "LOT",
+          expiry: "2027-02-28",
+        })
+      ).status,
+      201,
+    );
+    const supplierResponse = await request("/api/operations/suppliers", head, {
+      name: "New supplier",
+    });
+    assert.equal(supplierResponse.status, 201);
+    const supplier = (await supplierResponse.json()) as any;
+    const response = await request("/api/operations/documents", checker, {
+      warehouseId: "W",
+      type: "RECEIVING",
+      supplierId: supplier.id,
+      lines: [
+        {
+          productId: "NEW",
+          locationId: "NEW-LOC",
+          documentQuantity: 2,
+          actualQuantity: 2,
+          uom: "BOX",
+          batch: "LOT",
+          expiry: "2027-02-28",
+        },
+      ],
+    });
+    assert.equal(response.status, 201);
+    const document = (await response.json()) as any;
+    for (const [action, cookie] of [
+      ["submit", checker],
+      ["verify", admin],
+    ])
+      assert.equal(
+        (
+          await request(
+            `/api/operations/documents/${document.id}/${action}`,
+            cookie,
+            { warehouseId: "W" },
+          )
+        ).status,
+        200,
+      );
+    const stock = (await (
+      await request("/api/operations/reports?kind=stock", head)
+    ).json()) as any;
+    assert.equal(
+      stock.items.find((row: any) => row.product === "NEW").quantity,
+      12,
+    );
+    const master = (await (
+      await request("/api/operations/master", checker)
+    ).json()) as any;
+    assert(master.products.some((p: any) => p.id === "NEW"));
+    assert(master.locations.some((p: any) => p.id === "NEW-LOC"));
+    assert(!master.products.some((p: any) => p.id === "INVALID"));
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await db.close();
+  }
+});

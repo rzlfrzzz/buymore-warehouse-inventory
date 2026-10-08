@@ -37,7 +37,7 @@ test("synthetic template writer preserves headers/styles/dropdowns and groups ba
   const directory = resolve(".test-workbooks-" + randomUUID());
   const previous = process.env.BIGSELLER_TEMPLATE_DIR;
   try {
-    delete process.env.BIGSELLER_TEMPLATE_DIR;
+    process.env.BIGSELLER_TEMPLATE_DIR = join(directory, "missing");
     assert.equal((await templateReadiness()).PO.ready, false);
     await syntheticTemplates(directory);
     process.env.BIGSELLER_TEMPLATE_DIR = directory;

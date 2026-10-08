@@ -199,6 +199,107 @@ export async function handleOperations(ctx: Ctx) {
         true
       );
     }
+    if (
+      ctx.method === "POST" &&
+      [
+        "/api/operations/products",
+        "/api/operations/locations",
+        "/api/operations/batches",
+      ].includes(ctx.path)
+    ) {
+      need(ctx.actor.role === "Head", 403, "Head required");
+      const b = await ctx.body(ctx.req);
+      const kind = ctx.path.split("/").pop()!;
+      const allowed =
+        kind === "products"
+          ? ["code", "name", "uom", "uomFactor", "trackBatch", "trackExpiry"]
+          : kind === "locations"
+            ? ["id"]
+            : ["product", "batch", "expiry"];
+      need(
+        Object.keys(b).every((key) => allowed.includes(key)),
+        400,
+        "Unknown master field",
+      );
+      const out = await command(
+        ctx,
+        `operations.${kind}.create`,
+        b,
+        async (tx) => {
+          if (kind === "locations") {
+            const id = text(b.id, "location", 100);
+            await tx.query(
+              "INSERT INTO locations(warehouse,id) VALUES ($1,$2)",
+              [ctx.actor.warehouse, id],
+            );
+            return { id };
+          }
+          if (kind === "products") {
+            const code = text(b.code, "code", 64).toUpperCase();
+            need(
+              /^[A-Z0-9][A-Z0-9._-]{0,63}$/.test(code),
+              400,
+              "Invalid product code",
+            );
+            const name = text(b.name, "name");
+            const uom = text(b.uom ?? "PCS", "uom", 20).toUpperCase();
+            const factor = b.uomFactor ?? 1;
+            need(
+              Number.isSafeInteger(factor) &&
+                Number(factor) > 0 &&
+                Number(factor) <= 2147483647,
+              400,
+              "Invalid UOM factor",
+            );
+            const trackBatch = b.trackBatch ?? false,
+              trackExpiry = b.trackExpiry ?? false;
+            need(
+              typeof trackBatch === "boolean" &&
+                typeof trackExpiry === "boolean" &&
+                (!trackExpiry || trackBatch),
+              400,
+              "Expiry tracking requires batch tracking",
+            );
+            await tx.query(
+              "INSERT INTO products(code,name,uom,uom_factor,track_batch,track_expiry) VALUES ($1,$2,$3,$4,$5,$6)",
+              [code, name, uom, factor, trackBatch, trackExpiry],
+            );
+            if (!trackBatch)
+              await tx.query(
+                "INSERT INTO product_batches(product,batch) VALUES ($1,'')",
+                [code],
+              );
+            return { id: code };
+          }
+          const product = text(b.product, "product", 64).toUpperCase();
+          const p = (
+            await tx.query(
+              "SELECT track_batch,track_expiry FROM products WHERE code=$1 AND active FOR UPDATE",
+              [product],
+            )
+          ).rows[0];
+          need(p, 404, "Product not found");
+          need(p.track_batch, 400, "Product does not track batches");
+          const batch = text(b.batch, "batch", 100);
+          const expiry = optText(b.expiry, "expiry", 10);
+          need(!p.track_expiry || expiry, 400, "Expiry required");
+          need(
+            !expiry ||
+              (/^\d{4}-\d{2}-\d{2}$/.test(expiry) &&
+                Number.isFinite(Date.parse(expiry)) &&
+                new Date(expiry).toISOString().slice(0, 10) === expiry),
+            400,
+            "Invalid expiry",
+          );
+          await tx.query(
+            "INSERT INTO product_batches(product,batch,expiry) VALUES ($1,$2,$3)",
+            [product, batch, expiry],
+          );
+          return { product, batch, expiry };
+        },
+      );
+      return (ctx.send(ctx.res, 201, out), true);
+    }
     const productRoute = ctx.path.match(
       /^\/api\/operations\/products\/([^/]+)$/,
     );

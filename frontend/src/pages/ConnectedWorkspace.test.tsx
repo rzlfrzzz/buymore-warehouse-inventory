@@ -98,3 +98,19 @@ describe("active connected workspace", () => {
     expect(html).not.toContain("<main");
   });
 });
+
+it("exposes master onboarding only to Head with real required entry forms", () => {
+  const head = render("Head");
+  for (const label of [
+    "Master data awal",
+    "Tambah produk",
+    "Tambah lokasi",
+    "Tambah batch",
+    "Tambah supplier",
+    "Faktor ke satuan dasar",
+  ])
+    expect(head).toContain(label);
+  for (const role of ["Checker", "Admin", "Staff"] as const)
+    expect(render(role)).not.toContain("Tambah produk");
+  expect(render("Checker")).toContain("minta Head melengkapi master data");
+});

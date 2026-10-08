@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ApiError, type AuthSession } from "../services/api";
 import { loadOverview, type Overview } from "../services/overview";
 import { CountWorkspace } from "./CountWorkspace";
+import { MasterEntry } from "./MasterEntry";
 
 import {
   ConnectedLayout,
@@ -1148,6 +1149,53 @@ export function OperationsWorkspace({
         </>
       )}
 
+      {(page === "dashboard" || page === "settings") && role === "Head" && (
+        <MasterEntry
+          key={scope}
+          products={master.products}
+          busy={busy}
+          save={async (kind, data) => {
+            setBusy(true);
+            setError("");
+            setMessage("");
+            try {
+              await mutate(`/operations/${kind}`, data);
+              await loadMaster();
+              if (scope === activeScope.current)
+                setMessage("Master data tersimpan.");
+            } catch (e) {
+              if (scope === activeScope.current) fail(e);
+              throw e;
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+      {page === "dashboard" && role === "Head" && (
+        <section className="connected-card">
+          <h2>Supplier awal</h2>
+          <label>
+            Supplier baru
+            <input
+              value={newSupplier}
+              onChange={(e) => setNewSupplier(e.target.value)}
+            />
+          </label>
+          <button
+            disabled={busy || !newSupplier.trim()}
+            onClick={() => void run(createSupplier)}
+          >
+            Tambah supplier
+          </button>
+        </section>
+      )}
+      {page === "dashboard" && role === "Checker" && (
+        <p>
+          Isi Penerimaan setelah Head membuat produk, lokasi dan supplier. Jika
+          pilihan kosong, minta Head melengkapi master data.
+        </p>
+      )}
       {page === "counts" && (
         <CountWorkspace
           key={warehouse}

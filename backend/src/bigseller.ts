@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type ExportType = "PO" | "SR";
 export const templateNames = {
@@ -29,10 +30,10 @@ export const knownHeaders: Record<ExportType, Record<number, string>> = {
   SR: { 1: "*Nomor SKU", 2: "*Jumlah Pengurangan Stok", 3: "Nomor Seri" },
 };
 export async function loadTemplate(type: ExportType) {
-  const directory = process.env.BIGSELLER_TEMPLATE_DIR;
-  if (!directory)
-    throw new Error(
-      "Set BIGSELLER_TEMPLATE_DIR to a directory containing original official BigSeller XLSX workbooks.",
+  const directory =
+    process.env.BIGSELLER_TEMPLATE_DIR ??
+    fileURLToPath(
+      new URL("../../bigseller-format-ekspor-impor/", import.meta.url),
     );
   const workbook = new ExcelJS.Workbook();
   try {

@@ -18,6 +18,9 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:?Set HTTPS origin}
       DATABASE_URL: ${DATABASE_URL:?Set runtime role URL}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      BIGSELLER_TEMPLATE_DIR: /app/bigseller-templates
+    volumes:
+      - ${BIGSELLER_TEMPLATE_DIR:-./bigseller-format-ekspor-impor}:/app/bigseller-templates:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

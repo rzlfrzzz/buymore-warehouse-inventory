@@ -66,3 +66,22 @@ npm audit --audit-level=moderate
 ```
 
 `backend/test/operations.test.ts` runs HTTP against an isolated in-memory PGlite database, exercising transitions, reservations, reports, permissions, settings, template-backed creation, retry/duplicate claims, downloads and fail-closed rejection. `backend/test/bigseller.test.ts` checks synthetic workbook grouping, text SKU preservation, styles, dropdowns and unknown headers. Existing count/auth/hardening tests remain enabled. This is not a substitute for concurrent multi-connection PostgreSQL load tests, browser accessibility checks, deployment rehearsal, or BigSeller import acceptance. See `production-hardening.md` for the unchanged production checklist.
+
+## First data entry (existing database, no reset)
+
+Sign in with an actual warehouse membership; no demo data or role switching is used.
+
+1. **Head** opens Ringkasan (or Pengaturan) and uses **Master data awal** to create products and warehouse locations. Choose document UOM, its base-unit multiplier, and batch/expiry tracking at creation; these global catalog properties are immutable. Products and batches are global, locations and suppliers are warehouse-scoped. A product without batch tracking receives its empty batch atomically.
+2. **Head** creates tracked batches with required expiry and adds a supplier from Ringkasan or Pengaturan. Checker receiving also registers new batches through the existing guarded transaction. Configure warehouse BigSeller SKU mappings in Pengaturan before exports.
+3. **Checker** opens Penerimaan, chooses the supplier, product and location, enters document/actual quantities (and batch/expiry if tracked), saves the draft and submits it. **Admin/Head** verifies it; only verification posts stock. Head does not impersonate Checker to enter transactions.
+4. **Staff** starts Stock count for a configured location and enters blind quantities. Follow the existing separate approval/posting workflow.
+
+New Head-only endpoints are `POST /api/operations/products`, `/locations`, and `/batches`. They require authenticated warehouse membership, origin validation and an idempotency key; catalog writes, audit and receipt are atomic. Duplicate identifiers return conflict rather than overwrite.
+
+No migration or database reset is required for these entry forms. For an existing restricted production runtime role, the database owner must apply `GRANT INSERT ON locations TO buymore_app;` once (also included in deploy/roles.sql for new installations). Do not rerun CREATE ROLE on an existing role. Tests migrate only isolated PGlite fixtures, never the user's database.
+
+### Original BigSeller templates
+
+The backend defaults to the repository's `bigseller-format-ekspor-impor` directory, resolved relative to the source/built module rather than the shell working directory. Keep the original `impor_pesanan_pembelian_in.xlsx` and `impor_daftar_pengurangan_stok_in.xlsx` unchanged. An explicit `BIGSELLER_TEMPLATE_DIR` overrides this default; missing/invalid override files fail closed and do not silently use the repository copies.
+
+Production Compose mounts this directory read-only at `/app/bigseller-templates`. Copy the original directory alongside docker-compose.production.yml on deployment, or set host `BIGSELLER_TEMPLATE_DIR` to its absolute location. The API container receives the fixed mounted path. Standalone backend images must mount/provide originals and set the variable explicitly. Do not reset volumes. Header/workbook regression tests cover both actual originals, but BigSeller's external importer acceptance still requires an operator smoke test.
