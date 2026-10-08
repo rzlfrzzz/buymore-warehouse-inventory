@@ -37,7 +37,7 @@ async function fixture() {
       ]);
       await tx.query("INSERT INTO memberships VALUES ($1,'W',$2)", [
         id,
-        name[0].toUpperCase() + name.slice(1),
+        name === "staff" ? "User" : "Admin",
       ]);
     }
     await tx.query("INSERT INTO locations VALUES ('W','A'),('W','B')");
@@ -91,7 +91,8 @@ async function fixture() {
 test("operations HTTP E2E covers receiving, reservations, settings and fail-closed export", async () => {
   const { db, server, request, login } = await fixture();
   try {
-    const checker = await login("checker");
+    const checker = await login("checker"),
+      user = await login("staff");
     const admin = await login("admin");
     const head = await login("head");
     const staff = await login("staff");
@@ -275,7 +276,7 @@ test("operations HTTP E2E covers receiving, reservations, settings and fail-clos
     );
 
     const count = (await (
-      await request("/api/counts", staff, { location: "A" })
+      await request("/api/counts", admin, { location: "A" })
     ).json()) as any;
     const frozenIssue = await request("/api/operations/documents", checker, {
       warehouseId: "W",
@@ -315,7 +316,7 @@ test("operations HTTP E2E covers receiving, reservations, settings and fail-clos
     ];
     assert.equal(
       (
-        await request(`/api/counts/${count.id}/submit`, staff, {
+        await request(`/api/counts/${count.id}/submit`, admin, {
           lines: countLines,
         })
       ).status,
@@ -469,9 +470,10 @@ test("template-backed export is durable, scoped, idempotent and rejects duplicat
     process.env.BIGSELLER_TEMPLATE_DIR = directory;
     const head = await login("head"),
       admin = await login("admin"),
-      checker = await login("checker");
+      checker = await login("checker"),
+      user = await login("staff");
     assert.equal(
-      (await request("/api/operations/suppliers", admin, { name: "Denied" }))
+      (await request("/api/operations/suppliers", user, { name: "Denied" }))
         .status,
       403,
     );
@@ -479,7 +481,7 @@ test("template-backed export is durable, scoped, idempotent and rejects duplicat
       (
         await request(
           "/api/operations/products/Q",
-          admin,
+          user,
           { bigsellerSku: "000Q", bigsellerRegistered: true },
           "PATCH",
         )
@@ -569,7 +571,7 @@ test("template-backed export is durable, scoped, idempotent and rejects duplicat
       409,
     );
     assert.equal(
-      (await request("/api/operations/exports", admin, payload)).status,
+      (await request("/api/operations/exports", user, payload)).status,
       403,
     );
     const file = await request(
@@ -591,7 +593,7 @@ test("template-backed export is durable, scoped, idempotent and rejects duplicat
       403,
     );
     assert.equal(
-      (await request("/api/operations/exports/" + job.id + "/file", admin))
+      (await request("/api/operations/exports/" + job.id + "/file", user))
         .status,
       403,
     );
@@ -727,7 +729,7 @@ test("Head onboarding through HTTP produces persisted receiving stock without ca
       trackBatch: true,
       trackExpiry: true,
     };
-    for (const cookie of [checker, admin, staff]) {
+    for (const cookie of [staff]) {
       for (const [kind, data] of [
         ["products", product],
         ["locations", { id: "NEW-LOC" }],

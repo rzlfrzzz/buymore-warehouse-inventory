@@ -44,7 +44,7 @@ export function Reports({
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
-  const auditAllowed = session.role === "Head";
+  const auditAllowed = session.role === "Admin";
   const headers =
     tab === "ledger"
       ? ["Dokumen", "Material", "Lokasi", "Mutasi dasar", "Satuan"]

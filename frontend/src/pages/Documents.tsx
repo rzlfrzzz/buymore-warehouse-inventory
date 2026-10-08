@@ -33,7 +33,7 @@ export function Documents({
     ((d.status === "PENDING" && canVerify(session.role, d.kind)) ||
       (d.kind === "stock-count" &&
         d.status === "VERIFIED" &&
-        session.role === "Head"));
+        session.role === "Admin"));
   const filtered = documents
     .filter((d) => (kind === "approval" ? actionable(d) : d.kind === kind))
     .filter(

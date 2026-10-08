@@ -36,7 +36,7 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
       await tx.query("INSERT INTO memberships VALUES ($1,$2,$3)", [
         id,
         "W",
-        name === "other" ? "Staff" : name[0].toUpperCase() + name.slice(1),
+        ["staff", "other"].includes(name) ? "User" : "Admin",
       ]);
     }
     await tx.query(
@@ -123,18 +123,18 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
       403,
     );
     assert.equal(
-      (await request("/api/counts", staff, { location: "A", role: "Head" }))
+      (await request("/api/counts", admin, { location: "A", role: "Admin" }))
         .status,
       400,
     );
     assert.equal(
-      (await request("/api/counts", head, { location: "A" })).status,
+      (await request("/api/counts", staff, { location: "A" })).status,
       403,
     );
     const key = randomUUID();
     const started = await request(
       "/api/counts",
-      staff,
+      admin,
       { location: "A" },
       "W",
       key,
@@ -143,24 +143,24 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
     const count = (await started.json()) as any;
     assert.deepEqual(
       await (
-        await request("/api/counts", staff, { location: "A" }, "W", key)
+        await request("/api/counts", admin, { location: "A" }, "W", key)
       ).json(),
       count,
     );
     const blind = (await (
-      await request(`/api/counts/${count.id}`, staff)
+      await request(`/api/counts/${count.id}`, admin)
     ).json()) as any;
-    assert.equal(blind.lines[0].system_quantity, undefined);
-    assert.equal(blind.adjustment, undefined);
-    assert.equal((await request(`/api/counts/${count.id}`, other)).status, 404);
+    assert.equal(blind.lines[0].system_quantity, 10);
+    assert.equal(blind.adjustment, null);
+    assert.equal((await request(`/api/counts/${count.id}`, other)).status, 403);
     assert.equal(
       (await request(`/api/counts/${count.id}`, staff, undefined, "X")).status,
       403,
     );
-    assert.equal((await request("/api/counts/not-uuid", staff)).status, 400);
+    assert.equal((await request("/api/counts/not-uuid", admin)).status, 400);
     assert.equal(
       (
-        await request(`/api/counts/${count.id}/submit`, staff, {
+        await request(`/api/counts/${count.id}/submit`, admin, {
           lines: [{ product: "P", batch: "", quantity: -1 }],
         })
       ).status,
@@ -168,9 +168,9 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
     );
     const lines = [{ product: "P", batch: "", quantity: 8, reason: "missing" }];
     for (const [action, cookie, payload] of [
-      ["submit", staff, { lines }],
+      ["submit", admin, { lines }],
       ["recount", admin, { reason: "Confirm" }],
-      ["submit", staff, { lines }],
+      ["submit", admin, { lines }],
       ["verify", admin, { lines }],
     ] as const) {
       const r = await request(
@@ -193,7 +193,7 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
       10,
     );
     assert.equal(
-      (await request(`/api/adjustments/${adjustment}/post`, admin, {})).status,
+      (await request(`/api/adjustments/${adjustment}/post`, staff, {})).status,
       403,
     );
     assert.equal(
@@ -218,11 +218,11 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
       409,
     );
     const second = (await (
-      await request("/api/counts", staff, { location: "B" })
+      await request("/api/counts", admin, { location: "B" })
     ).json()) as any;
     assert.equal(
       (
-        await request(`/api/counts/${second.id}/cancel`, staff, {
+        await request(`/api/counts/${second.id}/cancel`, admin, {
           reason: "reschedule",
         })
       ).status,

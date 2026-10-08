@@ -37,15 +37,9 @@ export const connectedNavigation = [
 ] as const;
 export type ConnectedPage = (typeof connectedNavigation)[number]["id"];
 export function allowedConnectedPages(role?: string): ConnectedPage[] {
-  if (!role || role === "System Admin") return ["dashboard"];
-  return connectedNavigation
-    .filter(({ id }) => {
-      if (id === "inventory") return role !== "Staff";
-      if (id === "reports") return role === "Admin" || role === "Head";
-      if (id === "export") return role === "Head";
-      return true;
-    })
-    .map(({ id }) => id);
+  return role === "Admin"
+    ? connectedNavigation.map((item) => item.id)
+    : ["counts"];
 }
 export function ConnectedLayout({
   session,

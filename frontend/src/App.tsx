@@ -76,7 +76,7 @@ export default function App() {
   const documents = state.documents.filter(
     (d) =>
       d.warehouse === active.warehouse &&
-      (["Head", "Admin"].includes(active.role) ||
+      (["Admin", "Admin"].includes(active.role) ||
         d.createdBy === people[active.role].id),
   );
   const filtered = documents.filter((d) =>
@@ -90,7 +90,7 @@ export default function App() {
       ((d.status === "PENDING" && canVerify(active.role, d.kind)) ||
         (d.status === "VERIFIED" &&
           d.kind === "stock-count" &&
-          active.role === "Head")),
+          active.role === "Admin")),
   ).length;
   function save(next: State) {
     try {

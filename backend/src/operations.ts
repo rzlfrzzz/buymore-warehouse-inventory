@@ -9,7 +9,7 @@ import type { Runtime } from "./runtime.js";
 
 type Actor = {
   id: string;
-  role: "Staff" | "Admin" | "Head" | "Checker";
+  role: "User" | "Admin";
   warehouse: string;
 };
 type Tx = {
@@ -163,11 +163,7 @@ export async function handleOperations(ctx: Ctx) {
     if (warehouseId)
       need(warehouseId === ctx.actor.warehouse, 403, "Warehouse mismatch");
     if (ctx.method === "GET" && ctx.path === "/api/operations/master") {
-      need(
-        ["Checker", "Staff", "Admin", "Head"].includes(ctx.actor.role),
-        403,
-        "Permission denied",
-      );
+      need(["Admin"].includes(ctx.actor.role), 403, "Permission denied");
       const data = await ctx.db.transaction(async (tx) => ({
         users: (
           await tx.query(
@@ -207,7 +203,7 @@ export async function handleOperations(ctx: Ctx) {
         "/api/operations/batches",
       ].includes(ctx.path)
     ) {
-      need(ctx.actor.role === "Head", 403, "Head required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const b = await ctx.body(ctx.req);
       const kind = ctx.path.split("/").pop()!;
       const allowed =
@@ -304,7 +300,7 @@ export async function handleOperations(ctx: Ctx) {
       /^\/api\/operations\/products\/([^/]+)$/,
     );
     if (ctx.method === "PATCH" && productRoute) {
-      need(ctx.actor.role === "Head", 403, "Head required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const id = text(productRoute[1], "productId", 64).toUpperCase();
       const b = await ctx.body(ctx.req);
       need(
@@ -357,11 +353,7 @@ export async function handleOperations(ctx: Ctx) {
       if (ctx.method === "GET")
         return (ctx.send(ctx.res, 200, await settings(ctx)), true);
       need(ctx.method === "PATCH", 404, "Route not found");
-      need(
-        ["Head", "Admin"].includes(ctx.actor.role),
-        403,
-        "Permission denied",
-      );
+      need(["Admin"].includes(ctx.actor.role), 403, "Permission denied");
       const b = await ctx.body(ctx.req);
       need(
         Object.keys(b).every((k) =>
@@ -411,7 +403,7 @@ export async function handleOperations(ctx: Ctx) {
       return (ctx.send(ctx.res, 200, saved), true);
     }
     if (ctx.method === "POST" && ctx.path === "/api/operations/suppliers") {
-      need(ctx.actor.role === "Head", 403, "Permission denied");
+      need(ctx.actor.role === "Admin", 403, "Permission denied");
       const b = await ctx.body(ctx.req);
       const name = text(b.name, "name", 200);
       const out = await command(
@@ -478,7 +470,7 @@ export async function handleOperations(ctx: Ctx) {
       return (ctx.send(ctx.res, 200, out), true);
     }
     if (ctx.method === "POST" && ctx.path === "/api/operations/documents") {
-      need(ctx.actor.role === "Checker", 403, "Checker required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const b = await ctx.body(ctx.req);
       need(b.warehouseId === ctx.actor.warehouse, 403, "Warehouse mismatch");
       const type = text(b.type, "type");
@@ -638,9 +630,7 @@ export async function handleOperations(ctx: Ctx) {
           need(d, 404, "Document not found");
           if (act === "submit") {
             need(
-              ctx.actor.role === "Checker" &&
-                d.created_by === ctx.actor.id &&
-                d.status === "DRAFT",
+              ctx.actor.role === "Admin" && d.status === "DRAFT",
               403,
               "Submit denied",
             );
@@ -697,7 +687,7 @@ export async function handleOperations(ctx: Ctx) {
             );
             need(
               d.created_by === ctx.actor.id ||
-                ["Admin", "Head"].includes(ctx.actor.role),
+                ["Admin"].includes(ctx.actor.role),
               403,
               "Reject denied",
             );
@@ -710,14 +700,9 @@ export async function handleOperations(ctx: Ctx) {
               [id, ctx.actor.id, text(b.reason, "reason", 2000)],
             );
           } else {
+            need(d.status === "PENDING", 403, "Verify denied");
             need(
-              d.status === "PENDING" && d.created_by !== ctx.actor.id,
-              403,
-              "Verify denied",
-            );
-            need(
-              (d.type === "RECEIVING" &&
-                ["Admin", "Head"].includes(ctx.actor.role)) ||
+              (d.type === "RECEIVING" && ["Admin"].includes(ctx.actor.role)) ||
                 (d.type === "ISSUE" && ctx.actor.role === "Admin"),
               403,
               "Verify denied",
@@ -767,11 +752,7 @@ export async function handleOperations(ctx: Ctx) {
       return (ctx.send(ctx.res, 200, updated), true);
     }
     if (ctx.method === "GET" && ctx.path === "/api/operations/reports") {
-      need(
-        ["Admin", "Head"].includes(ctx.actor.role),
-        403,
-        "Permission denied",
-      );
+      need(["Admin"].includes(ctx.actor.role), 403, "Permission denied");
       const kind = ctx.url.searchParams.get("kind");
       need(kind === "stock" || kind === "activity", 400, "Invalid report kind");
       const st = await settings(ctx);
@@ -853,7 +834,7 @@ export async function handleOperations(ctx: Ctx) {
       ctx.method === "GET" &&
       ctx.path === "/api/operations/exports/eligible"
     ) {
-      need(ctx.actor.role === "Head", 403, "Head required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const type = ctx.url.searchParams.get("type");
       need(type === "PO" || type === "SR", 400, "Invalid export type");
       const items = await ctx.db.transaction(
@@ -872,7 +853,7 @@ export async function handleOperations(ctx: Ctx) {
       return (ctx.send(ctx.res, 200, { items }), true);
     }
     if (ctx.method === "GET" && ctx.path === "/api/operations/exports") {
-      need(ctx.actor.role === "Head", 403, "Head required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const rows = await ctx.db.transaction(
         async (tx) =>
           (
@@ -885,7 +866,7 @@ export async function handleOperations(ctx: Ctx) {
       return (ctx.send(ctx.res, 200, { items: rows }), true);
     }
     if (ctx.method === "POST" && ctx.path === "/api/operations/exports") {
-      need(ctx.actor.role === "Head", 403, "Head required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const b = await ctx.body(ctx.req);
       need(b.warehouseId === ctx.actor.warehouse, 403, "Warehouse mismatch");
       const type = text(b.type, "type");
@@ -1051,7 +1032,7 @@ export async function handleOperations(ctx: Ctx) {
     }
     const file = ctx.path.match(/^\/api\/operations\/exports\/([^/]+)\/file$/);
     if (ctx.method === "GET" && file) {
-      need(ctx.actor.role === "Head", 403, "Head required");
+      need(ctx.actor.role === "Admin", 403, "Admin required");
       const row = await ctx.db.transaction(
         async (tx) =>
           (

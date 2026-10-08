@@ -49,12 +49,12 @@ export function DocumentDetail({
   const approve =
     doc.kind === "stock-count" &&
     doc.status === "VERIFIED" &&
-    session.role === "Head" &&
+    session.role === "Admin" &&
     doc.createdBy !== me;
   const counting =
     doc.kind === "stock-count" &&
     doc.status === "DRAFT" &&
-    session.role === "Staff" &&
+    session.role === "User" &&
     doc.createdBy === me;
   const adjustment = state.adjustments?.find((a) => a.countId === doc.id);
   return (
@@ -78,7 +78,7 @@ export function DocumentDetail({
               <th>Material / lokasi</th>
               <th>Kuantitas aktual</th>
               {doc.kind === "receiving" && <th>Surat jalan</th>}
-              {doc.kind === "stock-count" && session.role !== "Staff" && (
+              {doc.kind === "stock-count" && session.role !== "User" && (
                 <>
                   <th>Saldo snapshot</th>
                   <th>Selisih</th>
@@ -125,7 +125,7 @@ export function DocumentDetail({
                       {number(l.documentQuantity / p.factor)} {p.inputUnit}
                     </td>
                   )}
-                  {doc.kind === "stock-count" && session.role !== "Staff" && (
+                  {doc.kind === "stock-count" && session.role !== "User" && (
                     <>
                       <td>
                         {number((l.snapshot ?? 0) / p.factor)} {p.inputUnit}
@@ -197,12 +197,12 @@ export function DocumentDetail({
       <div className="modal-footer">
         {((doc.status === "DRAFT" && doc.createdBy === me) ||
           (doc.status === "PENDING" &&
-            ["Head", "Admin"].includes(session.role)) ||
+            ["Admin", "Admin"].includes(session.role)) ||
           (doc.kind === "stock-count" &&
             (doc.status === "VERIFIED" ||
               (doc.status === "APPROVED" &&
                 adjustment?.status === "PENDING")) &&
-            session.role === "Head")) && (
+            session.role === "Admin")) && (
           <button className="button danger" onClick={() => act("cancel")}>
             Batalkan dokumen
           </button>
@@ -250,7 +250,7 @@ export function DocumentDetail({
             Setujui count
           </button>
         )}
-        {adjustment?.status === "PENDING" && session.role === "Head" && (
+        {adjustment?.status === "PENDING" && session.role === "Admin" && (
           <button className="button primary" onClick={() => act("post")}>
             Setujui & posting adjustment
           </button>

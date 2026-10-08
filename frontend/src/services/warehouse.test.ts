@@ -15,10 +15,10 @@ import {
   type State,
 } from "./warehouse";
 import { allowedPages } from "../permissions";
-const checker: Session = { role: "Checker", warehouse: "GDG-01" };
+const checker: Session = { role: "Admin", warehouse: "GDG-01" };
 const admin: Session = { role: "Admin", warehouse: "GDG-01" };
-const head: Session = { role: "Head", warehouse: "GDG-01" };
-const staff: Session = { role: "Staff", warehouse: "GDG-01" };
+const head: Session = { role: "Admin", warehouse: "GDG-01" };
+const staff: Session = { role: "User", warehouse: "GDG-01" };
 function input(
   kind: Document["kind"] = "receiving",
 ): Parameters<typeof saveDocument>[2] {
@@ -48,16 +48,12 @@ function stock(state: State) {
 }
 describe("permission dan scope gudang", () => {
   it("Staff tidak memiliki inventori atau laporan; System Admin tidak bertransaksi", () => {
-    expect(allowedPages("Staff")).not.toContain("inventory");
-    expect(allowedPages("Staff")).not.toContain("reports");
-    expect(allowedPages("System Admin")).toEqual(["settings"]);
-    expect(canCreate("Head", "receiving")).toBe(false);
+    expect(allowedPages("User")).not.toContain("inventory");
+    expect(allowedPages("User")).not.toContain("reports");
+    expect(allowedPages("Admin")).toEqual(["settings"]);
+    expect(canCreate("Admin", "receiving")).toBe(false);
     expect(() =>
-      saveDocument(
-        seed(),
-        { role: "System Admin", warehouse: "GDG-01" },
-        input(),
-      ),
+      saveDocument(seed(), { role: "Admin", warehouse: "GDG-01" }, input()),
     ).toThrow();
   });
   it("mencegah verifikasi lintas gudang dan Head memverifikasi issue", () => {

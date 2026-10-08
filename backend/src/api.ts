@@ -307,6 +307,28 @@ export async function createApi(
       const member = memberships.find((m) => m.warehouse === warehouse);
       requireValue(member, 403, "Warehouse access denied");
       const actor = { id: user.id, role: member.role, warehouse } as Actor;
+      if (path.startsWith("/api/workspace/")) {
+        const { handleWorkspace } = await import("./workspace.js");
+        if (
+          await handleWorkspace({
+            req,
+            res,
+            db,
+            actor,
+            path,
+            method: method || "GET",
+            url,
+            body,
+            send,
+          })
+        )
+          return;
+      }
+      requireValue(
+        actor.role === "Admin",
+        403,
+        "User access is limited to stock inspections and live photos",
+      );
       const pageSize = Number(url.searchParams.get("limit") || 200),
         offset = Number(url.searchParams.get("offset") || 0);
       requireValue(
@@ -319,7 +341,7 @@ export async function createApi(
         "Invalid pagination",
       );
       if (method === "POST" && path === "/api/products") {
-        requireValue(actor.role === "Head", 403, "Head required");
+        requireValue(actor.role === "Admin", 403, "Admin required");
         const input = await body(req);
         fields(input, ["code", "name", "batches"]);
         const code = text(input.code, "code", 64).trim().toUpperCase();
@@ -388,7 +410,7 @@ export async function createApi(
           })),
         );
       if (method === "GET" && path === "/api/inventory") {
-        requireValue(actor.role !== "Staff", 403, "Inventory access denied");
+        requireValue(actor.role === "Admin", 403, "Inventory access denied");
         return send(
           res,
           200,
@@ -411,8 +433,8 @@ export async function createApi(
             async (tx) =>
               (
                 await tx.query(
-                  `SELECT id,location,status,counted_by,started_at,correction_of FROM stock_counts WHERE warehouse=$1${actor.role === "Staff" ? " AND counted_by=$2" : ""} ORDER BY started_at DESC LIMIT 200`,
-                  actor.role === "Staff" ? [warehouse, actor.id] : [warehouse],
+                  `SELECT id,location,status,counted_by,started_at,correction_of FROM stock_counts WHERE warehouse=$1${actor.role === "User" ? " AND counted_by=$2" : ""} ORDER BY started_at DESC LIMIT 200`,
+                  actor.role === "User" ? [warehouse, actor.id] : [warehouse],
                 )
               ).rows,
           ),
@@ -424,7 +446,7 @@ export async function createApi(
         const id = uuid(countRoute[1]);
         await authorizeCount(id, actor);
         const result = await service.read(actor, id);
-        if (actor.role !== "Staff")
+        if (actor.role === "Admin")
           Object.assign(result, {
             adjustment: await db.transaction(
               async (tx) =>
@@ -456,7 +478,7 @@ export async function createApi(
       const key = `${actor.id}:${warehouse}:${rawKey}`;
       let result: unknown;
       if (path === "/api/counts") {
-        requireValue(actor.role === "Staff", 403, "Staff required");
+        requireValue(actor.role === "Admin", 403, "Admin required");
         fields(input, ["location", "correctionOf"]);
         result = await service.start(
           actor,
@@ -467,7 +489,7 @@ export async function createApi(
             : uuid(text(input.correctionOf, "correctionOf")),
         );
       } else if (postRoute) {
-        requireValue(actor.role === "Head", 403, "Head required");
+        requireValue(actor.role === "Admin", 403, "Admin required");
         fields(input, []);
         const id = uuid(postRoute[1]);
         const found = await db.transaction(
@@ -487,10 +509,10 @@ export async function createApi(
         await authorizeCount(id, actor);
         requireValue(
           action === "cancel" ||
-            (action === "submit" && actor.role === "Staff") ||
+            (action === "submit" && actor.role === "Admin") ||
             (["verify", "recount"].includes(action) &&
               actor.role === "Admin") ||
-            (action === "approve" && actor.role === "Head"),
+            (action === "approve" && actor.role === "Admin"),
           403,
           "Permission denied",
         );
@@ -544,8 +566,8 @@ export async function createApi(
       async (tx) =>
         (
           await tx.query(
-            `SELECT id FROM stock_counts WHERE id=$1 AND warehouse=$2${actor.role === "Staff" ? " AND counted_by=$3" : ""}`,
-            actor.role === "Staff"
+            `SELECT id FROM stock_counts WHERE id=$1 AND warehouse=$2${actor.role === "User" ? " AND counted_by=$3" : ""}`,
+            actor.role === "User"
               ? [id, actor.warehouse, actor.id]
               : [id, actor.warehouse],
           )

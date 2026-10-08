@@ -6,7 +6,7 @@ export interface DB {
 export type Transaction = <T>(work: (db: DB) => Promise<T>) => Promise<T>;
 export interface Actor {
   id: string;
-  role: "Staff" | "Admin" | "Head";
+  role: "User" | "Admin";
   warehouse: string;
 }
 export const reasons = [
@@ -103,7 +103,7 @@ export class StockCountService {
     ).rows[0];
   }
   start(actor: Actor, key: string, location: string, correctionOf?: string) {
-    check(actor.role === "Staff", "Staff required");
+    check(["User", "Admin"].includes(actor.role), "User or Admin required");
     return this.command(
       actor,
       key,
@@ -143,7 +143,7 @@ export class StockCountService {
     );
   }
   submit(actor: Actor, key: string, id: string, lines: CountLine[]) {
-    check(actor.role === "Staff", "Staff required");
+    check(["User", "Admin"].includes(actor.role), "User or Admin required");
     return this.command(
       actor,
       key,
@@ -152,8 +152,9 @@ export class StockCountService {
       async (db) => {
         const c = await this.count(db, actor, id);
         check(
-          c.status === "COUNTING" && c.counted_by === actor.id,
-          "Only assigned Staff can submit active count",
+          c.status === "COUNTING" &&
+            (c.counted_by === actor.id || actor.role === "Admin"),
+          "Only assigned User can submit active count",
         );
         const expected = (
           await db.query(
@@ -228,10 +229,7 @@ export class StockCountService {
       { id, reason },
       async (db) => {
         const c = await this.count(db, actor, id);
-        check(
-          c.status === "COUNTED" && c.counted_by !== actor.id,
-          "Invalid recount",
-        );
+        check(c.status === "COUNTED", "Invalid recount");
         await db.query(
           "UPDATE stock_counts SET status='COUNTING' WHERE id=$1",
           [id],
@@ -249,10 +247,7 @@ export class StockCountService {
       { id, lines },
       async (db) => {
         const c = await this.count(db, actor, id);
-        check(
-          c.status === "COUNTED" && c.counted_by !== actor.id,
-          "Invalid verifier or status",
-        );
+        check(c.status === "COUNTED", "Invalid verifier or status");
         const stored = (
           await db.query("SELECT * FROM stock_count_lines WHERE count_id=$1", [
             id,
@@ -293,7 +288,7 @@ export class StockCountService {
     );
   }
   approve(actor: Actor, key: string, id: string) {
-    check(actor.role === "Head", "Head required");
+    check(actor.role === "Admin", "Admin required");
     return this.command(
       actor,
       key,
@@ -301,12 +296,7 @@ export class StockCountService {
       { id },
       async (db) => {
         const c = await this.count(db, actor, id);
-        check(
-          c.status === "VERIFIED" &&
-            c.counted_by !== actor.id &&
-            c.verified_by !== actor.id,
-          "Invalid approver or status",
-        );
+        check(c.status === "VERIFIED", "Invalid approver or status");
         const lines = (
           await db.query(
             "SELECT * FROM stock_count_lines WHERE count_id=$1 AND counted_quantity<>system_quantity",
@@ -334,7 +324,7 @@ export class StockCountService {
     );
   }
   post(actor: Actor, key: string, adjustmentId: string) {
-    check(actor.role === "Head", "Head required");
+    check(actor.role === "Admin", "Admin required");
     return this.command(
       actor,
       key,
@@ -348,10 +338,7 @@ export class StockCountService {
         ).rows[0];
         check(a, "Adjustment not found");
         const c = await this.count(db, actor, a.count_id);
-        check(
-          c.counted_by !== actor.id && c.verified_by !== actor.id,
-          "Invalid adjustment approver",
-        );
+        check(actor.role === "Admin", "Invalid adjustment approver");
         const current = (
           await db.query<Adjustment>(
             "SELECT * FROM adjustments WHERE id=$1 FOR UPDATE",
@@ -410,9 +397,8 @@ export class StockCountService {
           "Posted history immutable",
         );
         check(
-          actor.role === "Head" ||
-            (actor.role === "Admin" && c.status !== "APPROVED") ||
-            (actor.role === "Staff" &&
+          actor.role === "Admin" ||
+            (actor.role === "User" &&
               actor.id === c.counted_by &&
               c.status === "COUNTING"),
           "Cancellation forbidden",
@@ -433,11 +419,11 @@ export class StockCountService {
     return this.transaction(async (db) => {
       const c = await this.count(db, actor, id, false);
       check(
-        actor.role !== "Staff" || c.counted_by === actor.id,
+        actor.role !== "User" || c.counted_by === actor.id,
         "Count not assigned",
       );
       const columns =
-        actor.role === "Staff"
+        actor.role === "User"
           ? "product,batch,counted_quantity"
           : "product,batch,system_quantity,counted_quantity,reason,explanation";
       return {

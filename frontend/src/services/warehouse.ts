@@ -1,4 +1,4 @@
-export type Role = "Head" | "Admin" | "Checker" | "Staff" | "System Admin";
+export type Role = "Admin" | "Admin" | "Admin" | "User" | "Admin";
 export type Kind = "receiving" | "issue" | "stock-count";
 export type Status =
   "DRAFT" | "PENDING" | "VERIFIED" | "APPROVED" | "REJECTED" | "CANCELLED";
@@ -99,46 +99,22 @@ export const warehouses: Record<Warehouse, string> = {
   "GDG-01": "Gudang Utama",
   "GDG-02": "Gudang Produksi",
 };
-export const roles: Role[] = [
-  "Head",
-  "Admin",
-  "Checker",
-  "Staff",
-  "System Admin",
-];
+export const roles: Role[] = ["Admin", "User"];
 export const people: Record<
   Role,
   { id: string; name: string; initials: string; title: string }
 > = {
-  Head: {
-    id: "head-demo",
-    name: "Aditya Pratama",
-    initials: "AP",
-    title: "Warehouse Head",
-  },
   Admin: {
     id: "admin-demo",
     name: "Nadia Putri",
     initials: "NP",
-    title: "Warehouse Admin",
+    title: "Admin",
   },
-  Checker: {
-    id: "checker-demo",
-    name: "Rizky Ramadhan",
-    initials: "RR",
-    title: "Warehouse Checker",
-  },
-  Staff: {
+  User: {
     id: "staff-demo",
     name: "Dewi Lestari",
     initials: "DL",
-    title: "Warehouse Staff",
-  },
-  "System Admin": {
-    id: "system-demo",
-    name: "Bima Saputra",
-    initials: "BS",
-    title: "System Administrator",
+    title: "User",
   },
 };
 export const products: Product[] = [
@@ -432,10 +408,10 @@ export function available(
   return balance - reserved;
 }
 export function canCreate(role: Role, kind: Kind) {
-  return kind === "stock-count" ? role === "Staff" : role === "Checker";
+  return kind === "stock-count" ? role === "User" : role === "Admin";
 }
 export function canVerify(role: Role, kind: Kind) {
-  return role === "Admin" || (role === "Head" && kind === "receiving");
+  return role === "Admin";
 }
 function log(
   state: State,
@@ -601,7 +577,7 @@ export function transition(
   const actor = people[session.role].id;
   if (action === "post") {
     ensure(
-      session.role === "Head" &&
+      session.role === "Admin" &&
         d.kind === "stock-count" &&
         d.status === "APPROVED" &&
         actor !== d.createdBy &&
@@ -679,14 +655,14 @@ export function transition(
   } else if (action === "cancel") {
     ensure(
       (d.status === "DRAFT" && d.createdBy === actor) ||
-        (d.status === "PENDING" && ["Admin", "Head"].includes(session.role)) ||
+        (d.status === "PENDING" && ["Admin", "Admin"].includes(session.role)) ||
         (d.kind === "stock-count" &&
           (d.status === "VERIFIED" ||
             (d.status === "APPROVED" &&
               next.adjustments?.some(
                 (a) => a.countId === id && a.status === "PENDING",
               ))) &&
-          session.role === "Head"),
+          session.role === "Admin"),
       "Dokumen ini tidak dapat dibatalkan.",
     );
     ensure(reason.trim(), "Alasan pembatalan wajib diisi.");
@@ -706,7 +682,7 @@ export function transition(
       ensure(
         d.kind === "stock-count" &&
           d.status === "VERIFIED" &&
-          session.role === "Head",
+          session.role === "Admin",
         "Persetujuan hanya oleh Head untuk stock count terverifikasi.",
       );
       ensure(
@@ -870,8 +846,8 @@ export function recordCount(
       d.warehouse === session.warehouse &&
       d.kind === "stock-count" &&
       d.status === "DRAFT" &&
-      session.role === "Staff" &&
-      d.createdBy === people.Staff.id,
+      session.role === "User" &&
+      d.createdBy === people.User.id,
     "Hanya penghitung dapat mencatat hasil.",
   );
   ensure(

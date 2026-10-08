@@ -311,7 +311,7 @@ export function CountWorkspace({
           >
             Stock count
           </button>
-          {role && role !== "Staff" && (
+          {role && role !== "User" && (
             <button
               className="button"
               disabled={busy}
@@ -357,7 +357,7 @@ export function CountWorkspace({
           <h1>{page === "counts" ? "Stock count" : "Inventori"}</h1>
           <p>
             Data server � kuantitas satuan dasar �{" "}
-            {role === "Staff"
+            {role === "User"
               ? "blind count tanpa saldo sistem"
               : "persetujuan dan posting terpisah"}
           </p>
@@ -419,7 +419,7 @@ export function CountWorkspace({
         )}
         {page === "counts" && (
           <>
-            {role === "Staff" && !detail && (
+            {role === "User" && !detail && (
               <section className="connected-card">
                 <h2>Mulai blind count</h2>
                 <p>
@@ -543,9 +543,9 @@ export function CountWorkspace({
                       <tr>
                         <th>Produk</th>
                         <th>Batch</th>
-                        {role !== "Staff" && <th>Sistem</th>}
+                        {role !== "User" && <th>Sistem</th>}
                         <th>Hasil hitung</th>
-                        {role !== "Staff" && (
+                        {role !== "User" && (
                           <>
                             <th>Alasan</th>
                             <th>Penjelasan</th>
@@ -557,7 +557,7 @@ export function CountWorkspace({
                       {draft.map((l, i) => (
                         <tr key={i}>
                           <td>
-                            {role === "Staff" &&
+                            {role === "User" &&
                             detail.status === "COUNTING" &&
                             i >= detail.lines.length ? (
                               <input
@@ -572,7 +572,7 @@ export function CountWorkspace({
                             )}
                           </td>
                           <td>
-                            {role === "Staff" &&
+                            {role === "User" &&
                             detail.status === "COUNTING" &&
                             i >= detail.lines.length ? (
                               <input
@@ -586,7 +586,7 @@ export function CountWorkspace({
                               l.batch || "-"
                             )}
                           </td>
-                          {role !== "Staff" && (
+                          {role !== "User" && (
                             <td>{detail.lines[i]?.system_quantity}</td>
                           )}
                           <td>
@@ -599,7 +599,7 @@ export function CountWorkspace({
                               value={l.quantity}
                               disabled={
                                 busy ||
-                                role !== "Staff" ||
+                                role !== "User" ||
                                 detail.status !== "COUNTING"
                               }
                               onChange={(e) =>
@@ -607,7 +607,7 @@ export function CountWorkspace({
                               }
                             />
                           </td>
-                          {role !== "Staff" && (
+                          {role !== "User" && (
                             <>
                               <td>
                                 <select
@@ -650,7 +650,7 @@ export function CountWorkspace({
                   </table>
                 </div>
                 <div className="connected-actions">
-                  {role === "Staff" && detail.status === "COUNTING" && (
+                  {role === "User" && detail.status === "COUNTING" && (
                     <>
                       <button
                         className="button"
@@ -692,7 +692,7 @@ export function CountWorkspace({
                       Verifikasi
                     </button>
                   )}
-                  {role === "Head" && detail.status === "VERIFIED" && (
+                  {role === "Admin" && detail.status === "VERIFIED" && (
                     <button
                       className="button primary"
                       disabled={busy}
@@ -701,7 +701,7 @@ export function CountWorkspace({
                       Setujui count (belum posting)
                     </button>
                   )}
-                  {role === "Head" &&
+                  {role === "Admin" &&
                     detail.adjustment?.status === "PENDING" && (
                       <button
                         className="button primary"
@@ -733,9 +733,8 @@ export function CountWorkspace({
                         Minta recount
                       </button>
                     )}
-                    {(role === "Head" ||
-                      (role === "Admin" && detail.status !== "APPROVED") ||
-                      (role === "Staff" && detail.status === "COUNTING")) && (
+                    {(role === "Admin" ||
+                      (role === "User" && detail.status === "COUNTING")) && (
                       <button
                         className="button"
                         disabled={busy || !note.trim()}

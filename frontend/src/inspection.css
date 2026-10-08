@@ -1,0 +1,346 @@
+.inspection-app,
+.inspection-login {
+  --ink: #192c28;
+  --green: #245b48;
+  --paper: #f6f7f2;
+  --line: #dce4d9;
+  color: var(--ink);
+  font-family: "DM Sans", sans-serif;
+  background:
+    radial-gradient(ellipse at 90% 0%, #e4eedb, transparent 45%), var(--paper);
+  min-height: 100vh;
+  padding: 28px clamp(18px, 5vw, 80px);
+}
+.inspection-app button,
+.inspection-login button {
+  background: var(--green);
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+.inspection-app button:disabled,
+.inspection-login button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.inspection-app input,
+.inspection-app select,
+.inspection-login input {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+.inspection-app label,
+.inspection-login label {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.inspection-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 22px;
+}
+.inspection-header select {
+  width: auto;
+  margin-left: auto;
+}
+.inspection-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  letter-spacing: 0.09em;
+  font-size: 14px;
+}
+.inspection-brand span {
+  font-size: 10px;
+}
+.inspection-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 40px 0 28px;
+  gap: 20px;
+}
+.inspection-hero h1,
+.inspection-login h1 {
+  font-family: "Manrope", sans-serif;
+  letter-spacing: -0.045em;
+  font-size: clamp(30px, 4vw, 52px);
+  line-height: 1.1;
+  margin: 12px 0 18px;
+  max-width: 780px;
+}
+.inspection-hero p,
+.inspection-card p {
+  line-height: 1.6;
+  color: #5c7068;
+}
+.inspection-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+.inspection-metric {
+  padding: 20px 30px;
+  border-left: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  white-space: nowrap;
+}
+.inspection-metric strong {
+  font-size: 48px;
+  line-height: 1;
+}
+.inspection-assumption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #eaf0e3;
+  border: 1px solid #d1dfc6;
+  padding: 14px 18px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.inspection-assumption svg {
+  flex-shrink: 0;
+}
+.inspection-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 25px 0;
+  overflow: auto;
+}
+.inspection-tabs button {
+  background: transparent;
+  color: #5c7068;
+  white-space: nowrap;
+}
+.inspection-tabs button.active {
+  background: var(--green);
+  color: white;
+}
+.inspection-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  animation: inspection-enter 0.35s ease-out;
+}
+.inspection-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+  min-width: 0;
+}
+.inspection-card h2 {
+  font-family: "Manrope", sans-serif;
+  letter-spacing: -0.03em;
+  margin: 4px 0 12px;
+  font-size: 24px;
+}
+.inspection-card h3 {
+  margin-top: 30px;
+}
+.inspection-card button {
+  margin: 4px 6px 4px 0;
+}
+.inspection-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  border: 1px solid var(--line);
+  padding: 5px 14px;
+  border-radius: 10px;
+  margin-bottom: 15px;
+}
+.inspection-search input {
+  border: 0;
+}
+.inspection-products {
+  display: grid;
+  gap: 9px;
+  max-height: 760px;
+  overflow: auto;
+}
+.inspection-products button {
+  display: grid;
+  text-align: left;
+  gap: 7px;
+  background: white;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 18px;
+}
+.inspection-products button.selected {
+  border-color: var(--green);
+  background: #eaf0e3;
+}
+.inspection-products button span {
+  font-size: 12px;
+  color: #5c7068;
+}
+.inspection-products .inspection-sku {
+  font-family: monospace;
+  letter-spacing: 0.05em;
+}
+.inspection-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.inspection-camera {
+  background: #f1f4ed;
+  border: 1px dashed #bbcdb1;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.inspection-camera p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.inspection-camera img,
+.inspection-camera video,
+.inspection-evidence {
+  width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.inspection-table {
+  overflow: auto;
+  margin: 18px 0;
+}
+.inspection-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.inspection-table td,
+.inspection-table th {
+  padding: 13px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  min-width: 110px;
+}
+.inspection-table th {
+  color: #688071;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.inspection-table button {
+  font-size: 11px;
+  padding: 8px;
+}
+.inspection-error,
+.inspection-notice {
+  padding: 16px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  background: #fff0e9;
+  color: #903416;
+}
+.inspection-notice {
+  background: #e6f0e1;
+  color: #245b48;
+}
+.inspection-footer {
+  font-size: 11px;
+  color: #718174;
+  border-top: 1px solid var(--line);
+  margin-top: 40px;
+  padding-top: 20px;
+}
+.inspection-login {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: none;
+  padding: 60px max(24px, calc((100vw - 640px) / 2));
+}
+.inspection-login form {
+  margin-top: 18px;
+  max-width: 400px;
+}
+.inspection-check {
+  display: flex !important;
+  align-items: center;
+}
+.inspection-check input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+@keyframes inspection-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 760px) {
+  .inspection-grid {
+    grid-template-columns: 1fr;
+  }
+  .inspection-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .inspection-header > span {
+    font-size: 12px;
+  }
+  .inspection-header select {
+    max-width: 130px;
+  }
+  .inspection-brand span {
+    display: none;
+  }
+  .inspection-hero {
+    padding: 28px 0;
+  }
+  .inspection-metric {
+    display: none;
+  }
+  .inspection-card {
+    padding: 18px;
+  }
+  .inspection-products {
+    max-height: 320px;
+  }
+  .inspection-header button {
+    margin-left: auto;
+  }
+  .inspection-app {
+    padding: 20px 16px;
+  }
+  .inspection-assumption {
+    align-items: flex-start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspection-grid {
+    animation: none;
+  }
+}

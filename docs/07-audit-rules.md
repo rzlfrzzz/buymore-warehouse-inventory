@@ -1,3 +1,5 @@
+> CURRENT REQUIREMENTS: The two-role Admin/User inspection workspace supersedes conflicting legacy role, blind-count, segregation-of-duties and entry-menu requirements in this historical document. See [current workflow and reviewable assumptions](two-role-workspace.md). Immutable posted history and audit protections still apply.
+
 # 07 - Audit Rules
 
 Dokumen ini mengatur apa yang dicatat sebagai jejak audit, bagaimana jejak itu

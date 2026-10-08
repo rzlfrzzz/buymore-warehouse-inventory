@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { migrate } from "../src/runtime.js";
 import { StockCountService, type Actor, type DB } from "../src/stock-count.js";
-const staff: Actor = { id: "staff", role: "Staff", warehouse: "W" };
+const staff: Actor = { id: "staff", role: "User", warehouse: "W" };
 const admin: Actor = { id: "admin", role: "Admin", warehouse: "W" };
-const head: Actor = { id: "head", role: "Head", warehouse: "W" };
+const head: Actor = { id: "head", role: "Admin", warehouse: "W" };
 async function setup() {
   const db = new PGlite();
   await migrate({
@@ -58,9 +58,7 @@ test("real PostgreSQL engine: blind snapshot, freeze, recount, separate posting,
       s.verify(admin, "badreason", c.id, [{ ...lines[0], reason: "other" }]),
       /explanation/,
     );
-    await assert.rejects(
-      s.verify({ ...admin, id: "staff" }, "self", c.id, lines),
-    );
+    // Admin may verify their own work in the two-role model.
     await s.verify(admin, "verify", c.id, lines);
     const a = await s.approve(head, "approve", c.id);
     assert.equal(

@@ -330,14 +330,7 @@ export function OperationsWorkspace({
   useEffect(() => {
     let active = true;
     setOverview(null);
-    if (
-      page !== "dashboard" ||
-      !session ||
-      !warehouse ||
-      !role ||
-      role === "System Admin"
-    )
-      return;
+    if (page !== "dashboard" || !session || !warehouse || !role) return;
     setBusy(true);
     loadOverview(warehouse)
       .then((result) => {
@@ -363,9 +356,9 @@ export function OperationsWorkspace({
     const timer = window.setInterval(() => {
       if (page === "receiving") void loadDocs("RECEIVING", docPage).catch(fail);
       if (page === "issue") void loadDocs("ISSUE", docPage).catch(fail);
-      if (page === "reports" && ["Admin", "Head"].includes(role || ""))
+      if (page === "reports" && ["Admin", "Admin"].includes(role || ""))
         void loadReports(reportKind, reportPage).catch(fail);
-      if (page === "export" && role === "Head") void loadExports().catch(fail);
+      if (page === "export" && role === "Admin") void loadExports().catch(fail);
     }, 30000);
     return () => window.clearInterval(timer);
   }, [
@@ -416,10 +409,10 @@ export function OperationsWorkspace({
     setLines(lines.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
   }
   function canCreate(_type: DocType) {
-    return role === "Checker";
+    return role === "Admin";
   }
   function canVerify(type: DocType) {
-    return role === "Admin" || (role === "Head" && type === "RECEIVING");
+    return role === "Admin";
   }
   function uomOptions(productId: string) {
     const configured =
@@ -650,12 +643,12 @@ export function OperationsWorkspace({
             : "Kelola operasional gudang dalam satu workspace."}
         </p>
       </header>
-      {(!warehouse || !role || role === "System Admin") && (
+      {(!warehouse || !role) && (
         <p className="connected-card">
           Akun belum memiliki akses operasional gudang. Hubungi administrator.
         </p>
       )}
-      {page === "dashboard" && warehouse && role && role !== "System Admin" && (
+      {page === "dashboard" && warehouse && role && (
         <>
           <section className="hero-panel">
             <div className="hero-copy">
@@ -988,7 +981,7 @@ export function OperationsWorkspace({
                           ))}
                         </select>
                       </label>
-                      {["Admin", "Head"].includes(role || "") && (
+                      {["Admin", "Admin"].includes(role || "") && (
                         <label>
                           Supplier baru
                           <input
@@ -998,7 +991,7 @@ export function OperationsWorkspace({
                           />
                         </label>
                       )}
-                      {["Admin", "Head"].includes(role || "") && (
+                      {["Admin", "Admin"].includes(role || "") && (
                         <button
                           type="button"
                           className="button"
@@ -1149,7 +1142,7 @@ export function OperationsWorkspace({
         </>
       )}
 
-      {(page === "dashboard" || page === "settings") && role === "Head" && (
+      {(page === "dashboard" || page === "settings") && role === "Admin" && (
         <MasterEntry
           key={scope}
           products={master.products}
@@ -1172,7 +1165,7 @@ export function OperationsWorkspace({
           }}
         />
       )}
-      {page === "dashboard" && role === "Head" && (
+      {page === "dashboard" && role === "Admin" && (
         <section className="connected-card">
           <h2>Supplier awal</h2>
           <label>
@@ -1190,7 +1183,7 @@ export function OperationsWorkspace({
           </button>
         </section>
       )}
-      {page === "dashboard" && role === "Checker" && (
+      {page === "dashboard" && role === "Admin" && (
         <p>
           Isi Penerimaan setelah Head membuat produk, lokasi dan supplier. Jika
           pilihan kosong, minta Head melengkapi master data.
@@ -1205,7 +1198,7 @@ export function OperationsWorkspace({
           onUnauthorized={() => setSession(null)}
         />
       )}
-      {page === "reports" && ["Admin", "Head"].includes(role || "") && (
+      {page === "reports" && ["Admin", "Admin"].includes(role || "") && (
         <section className="connected-card">
           <div className="connected-inline">
             <h2>
@@ -1365,7 +1358,7 @@ export function OperationsWorkspace({
           </button>
         </section>
       )}
-      {page === "export" && role === "Head" && (
+      {page === "export" && role === "Admin" && (
         <section className="connected-card">
           <h2>Export batch ({exports.length})</h2>
           {!settings.templates?.[exportType]?.ready && (
@@ -1560,12 +1553,12 @@ export function OperationsWorkspace({
             </label>
             <button
               className="button primary"
-              disabled={busy || !["Head", "Admin"].includes(role || "")}
+              disabled={busy || !["Admin", "Admin"].includes(role || "")}
             >
               Simpan settings
             </button>
           </form>
-          {role === "Head" && (
+          {role === "Admin" && (
             <div>
               <label>
                 Supplier baru
@@ -1711,7 +1704,7 @@ export function OperationsWorkspace({
             </label>
             <button
               className="button primary"
-              disabled={busy || role !== "Head"}
+              disabled={busy || role !== "Admin"}
             >
               Simpan konfigurasi produk
             </button>

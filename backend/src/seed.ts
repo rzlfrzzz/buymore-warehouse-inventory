@@ -12,9 +12,9 @@ try {
   const hash = await hashPassword(password);
   await db.transaction(async (tx) => {
     for (const [username, role] of [
-      ["staff", "Staff"],
+      ["staff", "User"],
       ["admin", "Admin"],
-      ["head", "Head"],
+      ["head", "Admin"],
     ]) {
       const id = randomUUID();
       const created = (

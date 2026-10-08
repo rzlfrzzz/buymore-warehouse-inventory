@@ -27,7 +27,7 @@ describe("active connected workspace", () => {
     expect(html).not.toContain("Peran demo");
   });
   it("retains original shell and dashboard with actual identity and unknown rather than fake KPIs", () => {
-    const html = render("Head");
+    const html = render("Admin");
     for (const label of [
       "Ringkasan",
       "Penerimaan",
@@ -50,14 +50,14 @@ describe("active connected workspace", () => {
     expect(html).toContain("?");
   });
   it("restricts navigation to membership permissions", () => {
-    expect(allowedConnectedPages("Staff")).not.toContain("inventory");
-    expect(allowedConnectedPages("Staff")).not.toContain("reports");
-    expect(allowedConnectedPages("Checker")).not.toContain("export");
+    expect(allowedConnectedPages("User")).not.toContain("inventory");
+    expect(allowedConnectedPages("User")).not.toContain("reports");
+    expect(allowedConnectedPages("Admin")).toContain("export");
     expect(allowedConnectedPages("Admin")).toContain("reports");
-    expect(allowedConnectedPages("Admin")).not.toContain("export");
-    expect(allowedConnectedPages("System Admin")).toEqual(["dashboard"]);
-    expect(render("Staff")).not.toContain("Inventori");
-    expect(render("Checker")).not.toContain("Laporan &amp; audit");
+    expect(allowedConnectedPages("Admin")).toContain("export");
+    expect(allowedConnectedPages("User")).toEqual(["counts"]);
+    expect(render("User")).not.toContain("Inventori");
+    expect(render("User")).not.toContain("Laporan &amp; audit");
   });
   it("uses credential login in the original split composition, never a role selector", () => {
     const html = renderToStaticMarkup(
@@ -87,7 +87,7 @@ describe("active connected workspace", () => {
     const html = renderToStaticMarkup(
       <CountWorkspace
         embedded
-        parentSession={session("Staff")}
+        parentSession={session("User")}
         parentWarehouse="WH2"
       />,
     );
@@ -100,7 +100,7 @@ describe("active connected workspace", () => {
 });
 
 it("exposes master onboarding only to Head with real required entry forms", () => {
-  const head = render("Head");
+  const head = render("Admin");
   for (const label of [
     "Master data awal",
     "Tambah produk",
@@ -110,7 +110,7 @@ it("exposes master onboarding only to Head with real required entry forms", () =
     "Faktor ke satuan dasar",
   ])
     expect(head).toContain(label);
-  for (const role of ["Checker", "Admin", "Staff"] as const)
+  for (const role of ["User"] as const)
     expect(render(role)).not.toContain("Tambah produk");
-  expect(render("Checker")).toContain("minta Head melengkapi master data");
+  expect(render("User")).not.toContain("Tambah produk");
 });

@@ -112,7 +112,7 @@ export function Dashboard({
               navigate(
                 balances
                   ? "inventory"
-                  : session.role === "Staff"
+                  : session.role === "User"
                     ? "stock-count"
                     : "receiving",
               )
@@ -337,12 +337,12 @@ export function Dashboard({
             <div className="role-focus">
               <ClipboardCheck size={38} />
               <h3>
-                {session.role === "Staff"
+                {session.role === "User"
                   ? "Hitung fisik, tanpa bias."
                   : "Catat setiap pergerakan."}
               </h3>
               <p>
-                {session.role === "Staff"
+                {session.role === "User"
                   ? "Saldo sistem tidak ditampilkan pada proses stock count."
                   : "Penerimaan dan pengeluaran Anda menunggu verifikasi Admin."}
               </p>
@@ -359,7 +359,7 @@ export function Dashboard({
           <button
             className="text-button"
             onClick={() =>
-              navigate(session.role === "Staff" ? "stock-count" : "receiving")
+              navigate(session.role === "User" ? "stock-count" : "receiving")
             }
           >
             Lihat semua

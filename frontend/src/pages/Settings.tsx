@@ -15,7 +15,7 @@ export function Settings({
   session: Session;
   search: string;
 }) {
-  const system = session.role === "System Admin";
+  const system = session.role === "Admin";
   const [tab, setTab] = useState(system ? "users" : "master");
   const tabs = system
     ? [
@@ -167,9 +167,7 @@ export function Settings({
                       </td>
                       <td>{r}</td>
                       <td>
-                        {r === "System Admin"
-                          ? "Global"
-                          : "Kedua gudang (demo)"}
+                        {r === "Admin" ? "Global" : "Kedua gudang (demo)"}
                       </td>
                     </tr>
                   ))}

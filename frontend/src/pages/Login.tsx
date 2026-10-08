@@ -9,7 +9,7 @@ import {
   type Warehouse,
 } from "../services/warehouse";
 export function Login({ login }: { login: (session: Session) => void }) {
-  const [role, setRole] = useState<Role>("Head");
+  const [role, setRole] = useState<Role>("Admin");
   const [warehouse, setWarehouse] = useState<Warehouse>("GDG-01");
   return (
     <div className="login-page">

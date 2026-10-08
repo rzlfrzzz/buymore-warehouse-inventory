@@ -10,7 +10,7 @@ export type Page =
   | "export"
   | "settings";
 const pages: Record<Role, Page[]> = {
-  Head: [
+  Admin: [
     "dashboard",
     "inventory",
     "receiving",
@@ -21,20 +21,7 @@ const pages: Record<Role, Page[]> = {
     "export",
     "settings",
   ],
-  Admin: [
-    "dashboard",
-    "inventory",
-    "receiving",
-    "issue",
-    "stock-count",
-    "approval",
-    "reports",
-    "settings",
-  ],
-  Checker: ["dashboard", "receiving", "issue", "settings"],
-  Staff: ["dashboard", "stock-count", "settings"],
-  "System Admin": ["settings"],
+  User: ["stock-count"],
 };
 export const allowedPages = (role: Role) => pages[role];
-export const canViewBalances = (role: Role) =>
-  role === "Admin" || role === "Head";
+export const canViewBalances = (role: Role) => role === "Admin";

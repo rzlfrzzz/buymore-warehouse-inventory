@@ -1,6 +1,6 @@
 export interface Membership {
   warehouse: string;
-  role: "Staff" | "Admin" | "Head" | "Checker" | "System Admin";
+  role: "User" | "Admin";
 }
 export interface AuthSession {
   user: { id: string; username: string };

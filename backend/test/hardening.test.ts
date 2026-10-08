@@ -32,9 +32,9 @@ test("empty counts, 501-line count, catalog guards and truncate protection", asy
       "INSERT INTO locations VALUES ('W','EMPTY'),('W','BIG'); INSERT INTO products(code,name) SELECT 'P'||n,'Product' FROM generate_series(1,501) n; INSERT INTO product_batches(product,batch) SELECT code,'' FROM products;",
     );
     const service = new StockCountService(transaction),
-      staff: Actor = { id: "staff", role: "Staff", warehouse: "W" },
+      staff: Actor = { id: "staff", role: "User", warehouse: "W" },
       admin: Actor = { id: "admin", role: "Admin", warehouse: "W" },
-      head: Actor = { id: "head", role: "Head", warehouse: "W" };
+      head: Actor = { id: "head", role: "Admin", warehouse: "W" };
     const empty = await service.start(staff, "empty", "EMPTY");
     await service.submit(staff, "empty-submit", empty.id, []);
     await service.verify(admin, "empty-verify", empty.id, []);
