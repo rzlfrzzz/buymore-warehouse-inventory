@@ -1,6 +1,6 @@
 export interface Membership {
   warehouse: string;
-  role: "Staff" | "Admin" | "Head";
+  role: "Staff" | "Admin" | "Head" | "Checker" | "System Admin";
 }
 export interface AuthSession {
   user: { id: string; username: string };
@@ -38,10 +38,11 @@ export async function api<T>(
   warehouse?: string,
   input?: unknown,
   key?: string,
+  method?: "GET" | "POST" | "PATCH",
 ): Promise<T> {
   const response = await fetch(`/api${path}`, {
     credentials: "same-origin",
-    method: input === undefined ? "GET" : "POST",
+    method: method || (input === undefined ? "GET" : "POST"),
     headers: {
       ...(warehouse ? { "X-Warehouse": warehouse } : {}),
       ...(input === undefined ? {} : { "Content-Type": "application/json" }),

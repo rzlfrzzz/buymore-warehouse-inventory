@@ -1,5 +1,15 @@
 # 08 - BigSeller Export
 
+> Current implementation/deployment contract: see `operations-integration.md`.
+> Original workbooks are supplied by operators via `BIGSELLER_TEMPLATE_DIR`,
+> not included in this checkout. The implementation fills these templates,
+> stores immutable bytes/checksums and source snapshots in PostgreSQL, and
+> atomically claims VERIFIED receiving/issues or wholly negative POSTED
+> adjustments. READY means generated, not imported. The proposed completion,
+> failure/release and revision workflow below is not exposed; claims remain
+> locked to avoid duplicate imports. Only BASE_ONLY, non-serial exports are
+> enabled. Synthetic tests do not establish official workbook compatibility.
+
 Dokumen ini mendefinisikan bagaimana data di aplikasi diekspor ke BigSeller:
 file apa, kolom apa, aturan pengelompokan, validasi, alur ekspor, dan hal-hal
 yang **harus diuji di BigSeller** sebelum fitur ekspor dianggap selesai.

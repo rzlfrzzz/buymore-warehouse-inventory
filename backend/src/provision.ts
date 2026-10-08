@@ -3,7 +3,8 @@ import { hashPassword } from "./auth.js";
 import { openDatabase } from "./runtime.js";
 const username = process.env.ADMIN_USERNAME?.trim().toLowerCase(),
   password = process.env.ADMIN_PASSWORD,
-  warehouse = process.env.ADMIN_WAREHOUSE?.trim();
+  warehouse = process.env.ADMIN_WAREHOUSE?.trim(),
+  role = process.env.ADMIN_ROLE?.trim() || "Head";
 if (
   !username ||
   !/^[a-z0-9._-]{1,100}$/.test(username) ||
@@ -11,10 +12,11 @@ if (
   password.length < 16 ||
   password.length > 256 ||
   !warehouse ||
-  warehouse.length > 100
+  warehouse.length > 100 ||
+  !["Head", "Admin", "Checker"].includes(role)
 )
   throw new Error(
-    "ADMIN_USERNAME, ADMIN_PASSWORD (16-256 characters), ADMIN_WAREHOUSE required",
+    "ADMIN_USERNAME, ADMIN_PASSWORD (16-256 characters), ADMIN_WAREHOUSE, optional ADMIN_ROLE=Head|Admin|Checker required",
   );
 const db = await openDatabase();
 try {
@@ -31,13 +33,14 @@ try {
       "INSERT INTO users(id,username,password_hash) VALUES ($1,$2,$3)",
       [id, username, hash],
     );
-    await tx.query("INSERT INTO memberships VALUES ($1,$2,'Head')", [
+    await tx.query("INSERT INTO memberships VALUES ($1,$2,$3)", [
       id,
       warehouse,
+      role,
     ]);
   });
   console.log(
-    "First Head provisioned. Provision Staff/Admin and locations using owner-controlled procedures.",
+    `First ${role} provisioned. Provision Staff/Admin/Checker and locations using owner-controlled procedures.`,
   );
 } finally {
   await db.close();

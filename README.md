@@ -8,7 +8,9 @@ The default frontend is now the connected workspace, not the role-switching brow
 
 Staff only sees their assigned counts; system quantities, inventory balances and adjustments are not sent to Staff. Roles and warehouse memberships come from database records, never request bodies or browser role selectors. Approval with no variance completes the count without adjustment; variance approval alone does not change inventory. Posting does.
 
-Receiving, issue, reports, BigSeller export, uploads, master/user CRUD and shift scheduling are **disabled, not integrated**. Their earlier demo source and domain tests remain for reference but are not imported by the application entry point. Existing localStorage data is untouched and is never loaded into the connected workspace. New counts and changes persist only in the backend database. Master product discovery currently derives product identifiers from the ledger; new discovered product identifiers are accepted, not validated against a full product catalog. Count lists show the latest 200 authorized documents.
+Receiving and issue documents, stock/activity reports, warehouse settings, supplier creation, and existing product configuration are integrated with the authenticated central backend. Checker-created documents post only upon authorized verification; pending issues reserve stock and share count freezes and ledger protections. The original count workflow remains available. See [operations architecture, data flow, rollout and limitations](docs/operations-integration.md).
+
+The BigSeller page creates durable template-backed XLSX exports with atomic document claims and checksum-verified downloads. Deploy original official workbooks through `BIGSELLER_TEMPLATE_DIR`; missing or invalid templates fail closed without claims. Real BigSeller import acceptance remains a deployment gate. Uploads, full master/user CRUD and shift scheduling remain outside the integrated scope. Existing localStorage demo data is untouched and never loaded into the connected workspace. Count lists show the latest 200 authorized documents.
 
 ## Prerequisites
 

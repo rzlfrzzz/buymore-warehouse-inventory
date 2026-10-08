@@ -43,10 +43,26 @@
 .connected-actions {
   margin-top: 22px;
 }
+.connected-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.connected-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: end;
+}
 .connected-shell label {
   display: grid;
   gap: 7px;
   font-size: 13px;
+}
+.connected-check {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
 }
 .connected-shell input,
 .connected-shell select {
@@ -78,6 +94,21 @@
 }
 .connected-table code {
   font-size: 12px;
+}
+.connected-detail-row td {
+  background: #f8fbf7;
+}
+.connected-doc-detail {
+  border: 1px solid #dfe5df;
+  border-radius: 12px;
+  padding: 16px;
+}
+.connected-table.compact {
+  margin-top: 10px;
+}
+.connected-table.compact td,
+.connected-table.compact th {
+  padding: 9px 8px;
 }
 .connected-scope {
   font-size: 13px;

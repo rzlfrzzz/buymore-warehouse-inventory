@@ -306,7 +306,7 @@ export async function createApi(
       const warehouse = text(req.headers["x-warehouse"], "warehouse", 100);
       const member = memberships.find((m) => m.warehouse === warehouse);
       requireValue(member, 403, "Warehouse access denied");
-      const actor: Actor = { id: user.id, role: member.role, warehouse };
+      const actor = { id: user.id, role: member.role, warehouse } as Actor;
       const pageSize = Number(url.searchParams.get("limit") || 200),
         offset = Number(url.searchParams.get("offset") || 0);
       requireValue(
@@ -351,6 +351,22 @@ export async function createApi(
         });
         await security("catalog_create", 201);
         return send(res, 201, { code });
+      }
+      if (path.startsWith("/api/operations/")) {
+        const { handleOperations } = await import("./operations.js");
+        const handled = await handleOperations({
+          req,
+          res,
+          db,
+          method: method || "GET",
+          path,
+          url,
+          actor,
+          body,
+          send,
+          requestId,
+        });
+        if (handled) return;
       }
       if (method === "GET" && path === "/api/master")
         return send(

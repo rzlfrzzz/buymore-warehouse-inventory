@@ -35,6 +35,8 @@ export async function migrate(db: Runtime) {
       [1, "001-stock-count.sql"],
       [2, "002-auth.sql"],
       [3, "003-hardening.sql"],
+      [4, "004-operations.sql"],
+      [5, "005-export-templates.sql"],
     ] as const) {
       if (
         !(
