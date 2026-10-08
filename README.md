@@ -12,6 +12,14 @@ Receiving and issue documents, stock/activity reports, warehouse settings, suppl
 
 The BigSeller page creates durable template-backed XLSX exports with atomic document claims and checksum-verified downloads. Deploy original official workbooks through `BIGSELLER_TEMPLATE_DIR`; missing or invalid templates fail closed without claims. Real BigSeller import acceptance remains a deployment gate. Uploads, full master/user CRUD and shift scheduling remain outside the integrated scope. Existing localStorage demo data is untouched and never loaded into the connected workspace. Count lists show the latest 200 authorized documents.
 
+## Connected UI and demo parity
+
+The active entrypoint remains `ConnectedWorkspace`, backed by authenticated APIs. The visual regression came from replacing the demo `App`/`WorkspaceLayout` with a separate, plain operations shell: the original dashboard, grouped navigation, and composition were no longer mounted. The connected layout now reuses the original typography, green hero, sidebar, cards, login composition, and responsive styling without loading demo data or a role selector.
+
+Ringkasan uses server document totals and the latest **up to 200 authorized stock counts**, not fabricated stock KPIs or charts. Unloaded totals remain unknown, and failures provide retry rather than presenting zero. Menus follow actual warehouse membership; reports are Admin/Head, exports Head, and inventory excludes Staff. Settings retain backend-enforced read/write permissions. Embedded stock count shares the selected warehouse and authenticated session rather than independently choosing the first warehouse. Mobile navigation supports focus trapping, Escape, focus restoration, and an inert background.
+
+Receiving, issue, reports, exports, settings, count approval and separate posting continue to use existing API contracts and idempotent commands. This UI change does not alter backend code, databases, migrations, or deployment. Frontend validation includes shell/login/role isolation, authorized dashboard data, and API client tests (`npm test`), plus build and formatting checks.
+
 ## Prerequisites
 
 Node.js 22.20+ and npm. PostgreSQL 17 is the preferred database. All development listeners bind localhost. Scripts read environment variables from the shell; they do not automatically load `.env` (Docker Compose does).

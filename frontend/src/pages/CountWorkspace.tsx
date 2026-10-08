@@ -23,12 +23,22 @@ interface Draft {
 }
 interface CountWorkspaceProps {
   embedded?: boolean;
+  parentSession?: AuthSession;
+  parentWarehouse?: string;
+  onUnauthorized?: () => void;
 }
 
-export function CountWorkspace({ embedded = false }: CountWorkspaceProps) {
-  const [session, setSession] = useState<AuthSession | null>(null);
-  const [warehouse, setWarehouse] = useState("");
-  const [boot, setBoot] = useState(true);
+export function CountWorkspace({
+  embedded = false,
+  parentSession,
+  parentWarehouse,
+  onUnauthorized,
+}: CountWorkspaceProps) {
+  const [session, setSession] = useState<AuthSession | null>(
+    parentSession ?? null,
+  );
+  const [warehouse, setWarehouse] = useState(parentWarehouse ?? "");
+  const [boot, setBoot] = useState(!parentSession);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [username, setUsername] = useState("");
@@ -70,6 +80,7 @@ export function CountWorkspace({ embedded = false }: CountWorkspaceProps) {
   function fail(e: unknown) {
     setError(e instanceof Error ? e.message : "Tidak dapat menghubungi server");
     if (e instanceof ApiError && e.status === 401) {
+      onUnauthorized?.();
       setSession(null);
       setDetail(null);
       setCounts([]);
@@ -82,6 +93,7 @@ export function CountWorkspace({ embedded = false }: CountWorkspaceProps) {
     setWarehouse(s.memberships[0]?.warehouse || "");
   }
   useEffect(() => {
+    if (parentSession) return;
     void authenticate()
       .catch((e) => {
         if (!(e instanceof ApiError && e.status === 401)) fail(e);
@@ -337,7 +349,7 @@ export function CountWorkspace({ embedded = false }: CountWorkspaceProps) {
           </button>
         </aside>
       )}
-      <main className="connected-main">
+      <section className="connected-main">
         <header>
           <span className="eyebrow">
             {warehouse} / {role}
@@ -746,7 +758,7 @@ export function CountWorkspace({ embedded = false }: CountWorkspaceProps) {
             )}
           </>
         )}
-      </main>
+      </section>
     </div>
   );
 }

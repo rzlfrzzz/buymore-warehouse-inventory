@@ -1,15 +1,16 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ApiError, type AuthSession } from "../services/api";
+import { loadOverview, type Overview } from "../services/overview";
 import { CountWorkspace } from "./CountWorkspace";
 
-type Page =
-  | "receiving"
-  | "issue"
-  | "reports"
-  | "export"
-  | "settings"
-  | "counts"
-  | "inventory";
+import {
+  ConnectedLayout,
+  connectedNavigation,
+  allowedConnectedPages,
+  type ConnectedPage as Page,
+} from "../layouts/ConnectedLayout";
+import { Boxes, ArrowRight, ShieldCheck } from "lucide-react";
+
 type DocType = "RECEIVING" | "ISSUE";
 type ReportKind = "stock" | "activity";
 type Uom = string;
@@ -131,7 +132,7 @@ export function OperationsWorkspace({
   const [message, setMessage] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [page, setPage] = useState<Page>("receiving");
+  const [page, setPage] = useState<Page>("dashboard");
   const [master, setMaster] = useState<Master>({
     products: [],
     locations: [],
@@ -179,10 +180,14 @@ export function OperationsWorkspace({
   const [inventory, setInventory] = useState<
     { location: string; product: string; batch: string; quantity: number }[]
   >([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const intents = useRef(new Map<string, string>());
   const role = session?.memberships.find(
     (m) => m.warehouse === warehouse,
   )?.role;
+  const activeScope = useRef("");
+  const scope = `${session?.user.id ?? ""}:${warehouse}`;
+  activeScope.current = scope;
   const pageSize = Math.max(1, settings.reportPageSize || 50);
 
   function fail(e: unknown) {
@@ -190,13 +195,14 @@ export function OperationsWorkspace({
     if (e instanceof ApiError && e.status === 401) setSession(null);
   }
   async function run(work: () => Promise<void>) {
+    const startedScope = scope;
     setBusy(true);
     setError("");
     setMessage("");
     try {
       await work();
     } catch (e) {
-      fail(e);
+      if (startedScope === activeScope.current) fail(e);
     } finally {
       setBusy(false);
     }
@@ -225,10 +231,12 @@ export function OperationsWorkspace({
   async function authenticate() {
     const s = await api<AuthSession>("/session");
     setSession(s);
+    setPage("dashboard");
     setWarehouse(s.memberships[0]?.warehouse || "");
   }
   async function loadMaster() {
     const m = await api<Master>("/operations/master", warehouse);
+    if (scope !== activeScope.current) return;
     setMaster({
       products: m.products || [],
       locations: m.locations || [],
@@ -243,7 +251,7 @@ export function OperationsWorkspace({
       `/operations/documents?warehouseId=${encodeURIComponent(w)}&type=${type}&page=${pageNo}&pageSize=${pageSize}`,
       w,
     );
-    if (w !== warehouse) return;
+    if (scope !== activeScope.current) return;
     setDocs(r.items || []);
     setDocTotal(r.total || 0);
     setDocType(type);
@@ -261,6 +269,7 @@ export function OperationsWorkspace({
         `/operations/documents/${encodeURIComponent(id)}?warehouseId=${encodeURIComponent(warehouse)}`,
         warehouse,
       );
+      if (scope !== activeScope.current) return;
       setDocDetails((current) => ({ ...current, [id]: detail }));
     }
     setExpandedDocId(id);
@@ -280,7 +289,7 @@ export function OperationsWorkspace({
       `/operations/reports?${params.toString()}`,
       w,
     );
-    if (w !== warehouse) return;
+    if (scope !== activeScope.current) return;
     setReports(r.items || []);
     setReportTotal(r.total || 0);
     setReportKind(kind);
@@ -292,17 +301,22 @@ export function OperationsWorkspace({
       `/operations/exports?warehouseId=${encodeURIComponent(w)}`,
       w,
     );
-    if (w !== warehouse) return;
+    if (scope !== activeScope.current) return;
     setExports(r.items || []);
     const candidates = await api<{ items: DocumentItem[] }>(
       `/operations/exports/eligible?type=${type}`,
       w,
     );
+    if (scope !== activeScope.current) return;
     setEligible(candidates.items);
     setSelectedDocs([]);
   }
   async function loadInventory() {
-    setInventory(await api("/inventory?limit=200&offset=0", warehouse));
+    const result = await api<typeof inventory>(
+      "/inventory?limit=200&offset=0",
+      warehouse,
+    );
+    if (scope === activeScope.current) setInventory(result);
   }
 
   useEffect(() => {
@@ -314,28 +328,30 @@ export function OperationsWorkspace({
   }, []);
   useEffect(() => {
     let active = true;
-    setDocs([]);
-    setReports([]);
-    setExports([]);
-    setSelectedDocs([]);
-    setError("");
-    if (!session || !warehouse)
-      return () => {
-        active = false;
-      };
-    void run(async () => {
-      if (!active) return;
-      await loadMaster();
-      const jobs: Promise<void>[] = [loadDocs("RECEIVING", 1)];
-      if (["Admin", "Head"].includes(role || ""))
-        jobs.push(loadReports("stock", 1));
-      if (role === "Head") jobs.push(loadExports());
-      await Promise.all(jobs);
-    });
+    setOverview(null);
+    if (
+      page !== "dashboard" ||
+      !session ||
+      !warehouse ||
+      !role ||
+      role === "System Admin"
+    )
+      return;
+    setBusy(true);
+    loadOverview(warehouse)
+      .then((result) => {
+        if (active) setOverview(result);
+      })
+      .catch((e) => {
+        if (active) fail(e);
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
     return () => {
       active = false;
     };
-  }, [session, warehouse, role]);
+  }, [session, warehouse, role, page]);
   useEffect(() => {
     if (
       !session ||
@@ -467,21 +483,29 @@ export function OperationsWorkspace({
             </span>
           </div>
           <div>
-            <span className="eyebrow">KONTROL STOK TERHUBUNG</span>
+            <span className="eyebrow">RUANG KERJA GUDANG ANDA</span>
             <h1>
-              Operasi gudang.
+              Material teratur.
               <br />
-              <em>Langsung ke server.</em>
+              Tim terhubung.
+              <br />
+              <em>Kerja lebih tenang.</em>
             </h1>
             <p>
-              Receiving, issue, laporan, ekspor, dan pengaturan tanpa data demo.
+              Dari material pertama datang hingga produksi berjalan. Semua
+              tercatat dalam satu workspace.
             </p>
           </div>
+          <span className="login-story-footer">
+            <Boxes size={18} />
+            Dibangun untuk operasional Buymore.
+          </span>
         </section>
         <section className="login-form">
           <div className="login-inner">
-            <span className="subtle-chip">SERVER WORKSPACE</span>
-            <h2>Masuk ke gudang.</h2>
+            <span className="subtle-chip">WAREHOUSE WORKSPACE</span>
+            <h2>Selamat datang kembali.</h2>
+            <p>Masuk dengan akun gudang Anda untuk melanjutkan.</p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -517,1100 +541,1170 @@ export function OperationsWorkspace({
                 </p>
               )}
               <button className="button primary" disabled={busy}>
-                {busy ? "Menghubungkan..." : "Masuk"}
+                {busy ? "Menghubungkan..." : "Masuk ke workspace"}
+                <ArrowRight size={18} />
               </button>
             </form>
+            <div className="login-notice">
+              <ShieldCheck size={21} />
+              <p>
+                Akses aman sesuai akun dan keanggotaan gudang. Transaksi
+                tersimpan di server.
+              </p>
+            </div>
           </div>
         </section>
       </div>
     );
 
   return (
-    <div className="connected-shell">
-      <aside className="connected-sidebar">
-        <div className="brand">
-          <span className="brand-mark">b.</span>
-          <span>
-            buymore<small>WAREHOUSE WORKSPACE</small>
-          </span>
-        </div>
+    <ConnectedLayout
+      session={session}
+      warehouse={warehouse}
+      setWarehouse={(value) => {
+        setWarehouse(value);
+        setPage("dashboard");
+        setOverview(null);
+        setDocs([]);
+        setDocDetails({});
+        setInventory([]);
+        setReports([]);
+        setExports([]);
+        setMaster({
+          products: [],
+          locations: [],
+          suppliers: [],
+          settings: defaultSettings,
+        });
+        setLines([emptyLine()]);
+        setSupplierId("");
+        setReference("");
+        setSelectedDocs([]);
+        setEligible([]);
+        setExpandedDocId("");
+        setProductConfig({
+          id: "",
+          trackBatch: false,
+          trackExpiry: false,
+          uom: "PCS",
+          uomFactor: 1,
+          bigsellerSku: "",
+          bigsellerRegistered: false,
+        });
+        setError("");
+        setMessage("");
+      }}
+      page={page}
+      busy={busy}
+      navigate={(next) => {
+        if (!allowedConnectedPages(role).includes(next)) return;
+        setPage(next);
+        setError("");
+        setMessage("");
+        if (next === "receiving" || next === "issue")
+          void run(async () => {
+            await loadMaster();
+            await loadDocs(next === "receiving" ? "RECEIVING" : "ISSUE", 1);
+          });
+        if (next === "reports")
+          void run(async () => {
+            await loadMaster();
+            await loadReports(reportKind, 1);
+          });
+        if (next === "export")
+          void run(async () => {
+            await loadMaster();
+            await loadExports();
+          });
+        if (next === "settings") void run(loadMaster);
+        if (next === "inventory") void run(loadInventory);
+      }}
+      logout={() =>
+        void run(async () => {
+          await api("/logout", undefined, {});
+          setSession(null);
+          setPage("dashboard");
+          setOverview(null);
+        })
+      }
+    >
+      <header className="page-heading">
+        <span className="eyebrow">
+          {warehouse || "WORKSPACE"} / {role || "Tanpa akses"}
+        </span>
+        <h1>
+          {page === "dashboard" ? (
+            <>
+              Semua dalam kendali<span className="green-dot">.</span>
+            </>
+          ) : (
+            connectedNavigation.find((n) => n.id === page)?.label
+          )}
+        </h1>
         <p>
-          {session.user.username} / {role || "Tanpa akses"}
+          {page === "dashboard"
+            ? "Selamat datang, " +
+              session.user.username +
+              ". Ini ringkasan gudang Anda."
+            : "Kelola operasional gudang dalam satu workspace."}
         </p>
-        <label>
-          Gudang
-          <select
-            value={warehouse}
-            disabled={busy}
-            onChange={(e) => setWarehouse(e.target.value)}
-          >
-            {session.memberships.map((m) => (
-              <option key={m.warehouse}>{m.warehouse}</option>
+      </header>
+      {(!warehouse || !role || role === "System Admin") && (
+        <p className="connected-card">
+          Akun belum memiliki akses operasional gudang. Hubungi administrator.
+        </p>
+      )}
+      {page === "dashboard" && warehouse && role && role !== "System Admin" && (
+        <>
+          <section className="hero-panel">
+            <div className="hero-copy">
+              <span className="hero-tag">WORKSPACE GUDANG / {warehouse}</span>
+              <h2>
+                Material teratur.
+                <br />
+                Tim terhubung.
+              </h2>
+              <p>Pantau dokumen dan lanjutkan pekerjaan sesuai akses Anda.</p>
+              <button
+                className="button"
+                disabled={busy}
+                onClick={() => {
+                  setPage("receiving");
+                  void run(async () => {
+                    await loadMaster();
+                    await loadDocs("RECEIVING", 1);
+                  });
+                }}
+              >
+                Lihat penerimaan <ArrowRight size={16} />
+              </button>
+            </div>
+            <Boxes
+              className="connected-hero-icon"
+              size={130}
+              aria-hidden="true"
+            />
+          </section>
+          <div className="stats-grid connected-stats">
+            {[
+              { label: "Dokumen penerimaan", value: overview?.receiving },
+              { label: "Dokumen pengeluaran", value: overview?.issue },
+              {
+                label: "Stock count terbaru (maks. 200)",
+                value: overview?.counts,
+              },
+            ].map((metric) => (
+              <article className="stat-card" key={metric.label}>
+                <span className="stat-label">{metric.label}</span>
+                <strong>
+                  {metric.value === undefined
+                    ? "?"
+                    : metric.value.toLocaleString("id-ID")}
+                </strong>
+                <p>Sesuai akses akun di {warehouse}</p>
+              </article>
             ))}
-          </select>
-        </label>
-        {(
-          [
-            "receiving",
-            "issue",
-            "reports",
-            "export",
-            "settings",
-            "counts",
-          ] as Page[]
-        ).map((p) => (
-          <button
-            key={p}
-            className="button"
-            disabled={busy}
-            onClick={() => {
-              setPage(p);
-              if (p === "receiving") void run(() => loadDocs("RECEIVING", 1));
-              if (p === "issue") void run(() => loadDocs("ISSUE", 1));
-              if (p === "reports" && ["Admin", "Head"].includes(role || ""))
-                void run(() => loadReports(reportKind, 1));
-              if (p === "export" && role === "Head")
-                void run(() => loadExports());
-              if (p === "settings")
-                void run(async () =>
-                  setSettings(
-                    await api<OpsSettings>(
-                      `/operations/settings?warehouseId=${encodeURIComponent(warehouse)}`,
-                      warehouse,
-                    ),
-                  ),
-                );
-            }}
-          >
-            {p === "receiving"
-              ? "Receiving"
-              : p === "issue"
-                ? "Issue"
-                : p === "reports"
-                  ? "Reports"
-                  : p === "export"
-                    ? "Export"
-                    : p === "settings"
-                      ? "Settings"
-                      : "Stock count"}
-          </button>
-        ))}
-        {role && role !== "Staff" && (
-          <button
-            className="button"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                setPage("inventory");
-                await loadInventory();
-              })
-            }
-          >
-            Inventori
-          </button>
-        )}
-        <div className="connected-scope">
-          <strong>Aktif server</strong>
-          <p>
-            Menu memakai kontrak /api/operations, role dari sesi, dan jumlah
-            dari respons backend.
-          </p>
-        </div>
-        <button
-          className="button"
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              await api("/logout", undefined, {});
-              setSession(null);
-            })
-          }
-        >
-          Keluar
-        </button>
-      </aside>
-      <main className="connected-main">
-        <header>
-          <span className="eyebrow">
-            {warehouse} / {role}
-          </span>
-          <h1>
-            {page === "receiving"
-              ? "Receiving"
-              : page === "issue"
-                ? "Issue"
-                : page === "reports"
-                  ? "Reports"
-                  : page === "export"
-                    ? "BigSeller Export"
-                    : page === "settings"
-                      ? "Settings"
-                      : page === "inventory"
-                        ? "Inventori"
-                        : "Stock count"}
-          </h1>
-          <p>
-            Data server, auth cookie, dan tidak ada transaksi demo yang dianggap
-            tersimpan.
-          </p>
-        </header>
-        {error && (
-          <p className="connected-error" role="alert">
-            {error}
-          </p>
-        )}
-        {message && <p role="status">{message}</p>}
-        {busy && <p role="status">Memproses...</p>}
-
-        {(page === "receiving" || page === "issue") && (
-          <>
-            <section className="connected-card">
-              <div className="connected-inline">
-                <h2>
-                  {docType === "RECEIVING" ? "Penerimaan" : "Pengeluaran"}{" "}
-                  terbaru ({docCount})
-                </h2>
-                <button
-                  className="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(() =>
-                      loadDocs(
-                        page === "receiving" ? "RECEIVING" : "ISSUE",
-                        docPage,
-                      ),
-                    )
-                  }
-                >
-                  Muat ulang
-                </button>
-              </div>
-              <div className="connected-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Pilih</th>
-                      <th>Dokumen</th>
-                      <th>Referensi</th>
-                      <th>Status</th>
-                      <th>Partner</th>
-                      <th>Baris</th>
-                      <th>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {docs.map((d) => {
-                      const detail = docDetails[d.id];
-                      const expanded = expandedDocId === d.id;
-                      return (
-                        <Fragment key={d.id}>
-                          <tr>
-                            <td>
-                              <input
-                                type="checkbox"
-                                checked={selectedDocs.includes(d.id)}
-                                onChange={(e) =>
-                                  setSelectedDocs(
-                                    e.target.checked
-                                      ? [...selectedDocs, d.id]
-                                      : selectedDocs.filter(
-                                          (id) => id !== d.id,
-                                        ),
-                                  )
-                                }
-                              />
-                            </td>
-                            <td>
-                              <code>{d.id}</code>
-                            </td>
-                            <td>{d.reference || "-"}</td>
-                            <td>{d.status}</td>
-                            <td>{d.supplierName || "-"}</td>
-                            <td>{d.lineCount ?? "-"}</td>
-                            <td className="connected-row-actions">
-                              <button
-                                disabled={busy}
-                                onClick={() =>
-                                  void run(() => toggleDocDetail(d.id))
-                                }
-                              >
-                                {expanded ? "Tutup detail" : "View detail"}
-                              </button>
-                              <button
-                                disabled={busy || d.status !== "DRAFT"}
-                                onClick={() =>
-                                  void run(async () => {
-                                    await mutate(
-                                      `/operations/documents/${d.id}/submit`,
-                                      { warehouseId: warehouse },
-                                    );
-                                    await loadDocs(docType, docPage);
-                                    setMessage("Dokumen dikirim.");
-                                  })
-                                }
-                              >
-                                Submit
-                              </button>
-                              {canVerify(docType) && (
-                                <button
-                                  disabled={busy || d.status !== "PENDING"}
-                                  onClick={() =>
-                                    void run(async () => {
-                                      await mutate(
-                                        `/operations/documents/${d.id}/verify`,
-                                        { warehouseId: warehouse },
-                                      );
-                                      await loadDocs(docType, docPage);
-                                      setMessage("Dokumen terverifikasi.");
-                                    })
-                                  }
-                                >
-                                  Verify
-                                </button>
-                              )}
-                              <button
-                                disabled={
-                                  busy ||
-                                  !rejectReason.trim() ||
-                                  !["DRAFT", "PENDING"].includes(d.status)
-                                }
-                                onClick={() =>
-                                  void run(async () => {
-                                    await mutate(
-                                      `/operations/documents/${d.id}/reject`,
-                                      {
-                                        warehouseId: warehouse,
-                                        reason: rejectReason,
-                                      },
-                                    );
-                                    await loadDocs(docType, docPage);
-                                    setMessage("Dokumen ditolak.");
-                                  })
-                                }
-                              >
-                                Reject
-                              </button>
-                            </td>
-                          </tr>
-                          {expanded && (
-                            <tr className="connected-detail-row">
-                              <td colSpan={7}>
-                                {detail ? (
-                                  <div className="connected-doc-detail">
-                                    <p>
-                                      <strong>{detail.type}</strong> /{" "}
-                                      {detail.status} /{" "}
-                                      {detail.supplierName || "-"} / Ref{" "}
-                                      {detail.reference || "-"}
-                                    </p>
-                                    <div className="connected-table compact">
-                                      <table>
-                                        <thead>
-                                          <tr>
-                                            <th>Produk</th>
-                                            <th>Lokasi</th>
-                                            <th>Dok</th>
-                                            <th>Aktual</th>
-                                            <th>UOM</th>
-                                            <th>Base</th>
-                                            <th>Batch</th>
-                                            <th>ED</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {detail.lines.map((line) => (
-                                            <tr key={line.id}>
-                                              <td>
-                                                {line.productId}{" "}
-                                                {line.productName
-                                                  ? `- ${line.productName}`
-                                                  : ""}
-                                                {line.bigsellerSku
-                                                  ? ` / ${line.bigsellerSku}`
-                                                  : ""}
-                                              </td>
-                                              <td>{line.locationId}</td>
-                                              <td>{line.documentQuantity}</td>
-                                              <td>{line.actualQuantity}</td>
-                                              <td>{line.uom}</td>
-                                              <td>{line.baseQuantity}</td>
-                                              <td>{line.batch || "-"}</td>
-                                              <td>
-                                                {String(
-                                                  line.expiry || "-",
-                                                ).slice(0, 10)}
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p>Memuat detail...</p>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="connected-actions">
-                <label>
-                  Alasan reject
-                  <input
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                  />
-                </label>
-                <button
-                  disabled={busy || docPage === 1}
-                  onClick={() => void run(() => loadDocs(docType, docPage - 1))}
-                >
-                  Sebelumnya
-                </button>
-                <button
-                  disabled={busy || docs.length >= docTotal}
-                  onClick={() => void run(() => loadDocs(docType, docPage + 1))}
-                >
-                  Berikutnya
-                </button>
-              </div>
-              {!docs.length && <p>Belum ada dokumen.</p>}
-            </section>
-            {canCreate(docType) && (
-              <section className="connected-card">
-                <h2>Buat {docType === "RECEIVING" ? "receiving" : "issue"}</h2>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(async () => {
-                      await mutate("/operations/documents", submitPayload());
-                      setLines([emptyLine()]);
-                      setReference("");
-                      await loadDocs(docType, 1);
-                      setMessage("Draft dokumen tersimpan.");
-                    });
-                  }}
-                >
-                  <div className="connected-inline">
-                    {docType === "RECEIVING" && (
-                      <>
-                        <label>
-                          Supplier
-                          <select
-                            value={supplierId}
-                            onChange={(e) => setSupplierId(e.target.value)}
-                          >
-                            <option value="">Pilih supplier</option>
-                            {master.suppliers.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {["Admin", "Head"].includes(role || "") && (
-                          <label>
-                            Supplier baru
-                            <input
-                              value={newSupplier}
-                              onChange={(e) => setNewSupplier(e.target.value)}
-                              placeholder="Nama supplier"
-                            />
-                          </label>
-                        )}
-                        {["Admin", "Head"].includes(role || "") && (
-                          <button
-                            type="button"
-                            className="button"
-                            disabled={busy || !newSupplier.trim()}
-                            onClick={() => void run(createSupplier)}
-                          >
-                            Tambah supplier
-                          </button>
-                        )}
-                      </>
-                    )}
-                    <label>
-                      Referensi
-                      <input
-                        value={reference}
-                        onChange={(e) => setReference(e.target.value)}
-                        placeholder={
-                          docType === "RECEIVING"
-                            ? "Surat jalan"
-                            : "Tujuan/alasan"
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div className="connected-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Produk</th>
-                          <th>Lokasi</th>
-                          <th>Dokumen</th>
-                          <th>Aktual</th>
-                          <th>UoM</th>
-                          <th>Batch</th>
-                          <th>ED</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lines.map((l, i) => (
-                          <tr key={i}>
-                            <td>
-                              <select
-                                value={l.productId}
-                                onChange={(e) =>
-                                  updateLine(i, "productId", e.target.value)
-                                }
-                              >
-                                <option value="">Produk</option>
-                                {master.products.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.sku || p.id} {p.name || ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td>
-                              <select
-                                value={l.locationId}
-                                onChange={(e) =>
-                                  updateLine(i, "locationId", e.target.value)
-                                }
-                              >
-                                <option value="">Lokasi</option>
-                                {master.locations.map((loc) => (
-                                  <option key={loc.id} value={loc.id}>
-                                    {loc.code || loc.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={l.documentQuantity}
-                                onChange={(e) =>
-                                  updateLine(
-                                    i,
-                                    "documentQuantity",
-                                    e.target.value,
-                                  )
-                                }
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={l.actualQuantity}
-                                onChange={(e) =>
-                                  updateLine(
-                                    i,
-                                    "actualQuantity",
-                                    e.target.value,
-                                  )
-                                }
-                              />
-                            </td>
-                            <td>
-                              <select
-                                value={l.uom}
-                                onChange={(e) =>
-                                  updateLine(i, "uom", e.target.value)
-                                }
-                              >
-                                {uomOptions(l.productId).map((u) => (
-                                  <option key={u} value={u}>
-                                    {u}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td>
-                              <input
-                                value={l.batch}
-                                onChange={(e) =>
-                                  updateLine(i, "batch", e.target.value)
-                                }
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="date"
-                                value={l.expiry}
-                                onChange={(e) =>
-                                  updateLine(i, "expiry", e.target.value)
-                                }
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="connected-actions">
-                    <button
-                      type="button"
-                      className="button"
-                      onClick={() => setLines([...lines, emptyLine()])}
-                    >
-                      Tambah baris
-                    </button>
-                    <button className="button primary" disabled={busy}>
-                      Simpan draft
-                    </button>
-                  </div>
-                </form>
-              </section>
+          </div>
+          <section className="connected-card">
+            <h2>Pekerjaan gudang, satu tempat.</h2>
+            <p>
+              Gunakan menu operasional untuk penerimaan, pengeluaran, dan stock
+              count. Ringkasan berasal dari dokumen yang diizinkan server; bukan
+              saldo stok atau angka demo.
+            </p>
+            {overview &&
+              overview.receiving === 0 &&
+              overview.issue === 0 &&
+              overview.counts === 0 && (
+                <p>Belum ada dokumen yang tersedia di gudang ini.</p>
+              )}
+            {!overview && !busy && (
+              <button
+                className="button"
+                onClick={() => setSession({ ...session })}
+              >
+                Muat ulang ringkasan
+              </button>
             )}
-          </>
-        )}
+          </section>
+        </>
+      )}
+      {error && (
+        <p className="connected-error" role="alert">
+          {error}
+        </p>
+      )}
+      {message && <p role="status">{message}</p>}
+      {busy && <p role="status">Memproses...</p>}
 
-        {page === "counts" && <CountWorkspace embedded />}
-        {page === "reports" && ["Admin", "Head"].includes(role || "") && (
+      {(page === "receiving" || page === "issue") && (
+        <>
           <section className="connected-card">
             <div className="connected-inline">
               <h2>
-                Laporan ({reports.length}/{reportTotal})
+                {docType === "RECEIVING" ? "Penerimaan" : "Pengeluaran"} terbaru
+                ({docCount})
               </h2>
-              <label>
-                Jenis
-                <select
-                  value={reportKind}
-                  onChange={(e) =>
-                    void run(() => loadReports(e.target.value as ReportKind, 1))
-                  }
-                >
-                  <option value="stock">Stock</option>
-                  <option value="activity">Activity</option>
-                </select>
-              </label>
               <button
                 className="button"
-                onClick={() => {
-                  location.href = reportCsvUrl();
-                }}
+                disabled={busy}
+                onClick={() =>
+                  void run(() =>
+                    loadDocs(
+                      page === "receiving" ? "RECEIVING" : "ISSUE",
+                      docPage,
+                    ),
+                  )
+                }
               >
-                Unduh CSV halaman ini
+                Muat ulang
               </button>
             </div>
-            <form
-              className="connected-settings"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(() => loadReports(reportKind, 1));
-              }}
-            >
-              <label>
-                Dari
-                <input
-                  type="date"
-                  value={reportFilters.from}
-                  disabled={reportKind === "stock"}
-                  onChange={(e) =>
-                    setReportFilters({ ...reportFilters, from: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Sampai
-                <input
-                  type="date"
-                  value={reportFilters.to}
-                  disabled={reportKind === "stock"}
-                  onChange={(e) =>
-                    setReportFilters({ ...reportFilters, to: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Produk
-                <select
-                  value={reportFilters.product}
-                  onChange={(e) =>
-                    setReportFilters({
-                      ...reportFilters,
-                      product: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">Semua produk</option>
-                  {master.products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku || p.id} {p.name ? `- ${p.name}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Lokasi
-                <select
-                  value={reportFilters.location}
-                  onChange={(e) =>
-                    setReportFilters({
-                      ...reportFilters,
-                      location: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">Semua lokasi</option>
-                  {master.locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.code || l.id} {l.name ? `- ${l.name}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Actor
-                <input
-                  value={reportFilters.actor}
-                  disabled={reportKind === "stock"}
-                  placeholder="UUID actor activity"
-                  onChange={(e) =>
-                    setReportFilters({
-                      ...reportFilters,
-                      actor: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <button className="button primary" disabled={busy}>
-                Terapkan filter
-              </button>
-            </form>
-            <p>
-              CSV mengunduh halaman yang sedang tampil, bukan full export. Stock
-              menampilkan on-hand lifetime; tanggal dan actor hanya untuk
-              activity.
-            </p>
             <div className="connected-table">
               <table>
                 <thead>
                   <tr>
-                    {Object.keys(reports[0] || { empty: "" }).map((k) => (
-                      <th key={k}>{k}</th>
-                    ))}
+                    <th>Pilih</th>
+                    <th>Dokumen</th>
+                    <th>Referensi</th>
+                    <th>Status</th>
+                    <th>Partner</th>
+                    <th>Baris</th>
+                    <th>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.map((r, i) => (
-                    <tr key={i}>
-                      {Object.keys(reports[0] || r).map((k) => (
-                        <td key={k}>{String(r[k] ?? "-")}</td>
-                      ))}
-                    </tr>
-                  ))}
+                  {docs.map((d) => {
+                    const detail = docDetails[d.id];
+                    const expanded = expandedDocId === d.id;
+                    return (
+                      <Fragment key={d.id}>
+                        <tr>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedDocs.includes(d.id)}
+                              onChange={(e) =>
+                                setSelectedDocs(
+                                  e.target.checked
+                                    ? [...selectedDocs, d.id]
+                                    : selectedDocs.filter((id) => id !== d.id),
+                                )
+                              }
+                            />
+                          </td>
+                          <td>
+                            <code>{d.id}</code>
+                          </td>
+                          <td>{d.reference || "-"}</td>
+                          <td>{d.status}</td>
+                          <td>{d.supplierName || "-"}</td>
+                          <td>{d.lineCount ?? "-"}</td>
+                          <td className="connected-row-actions">
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void run(() => toggleDocDetail(d.id))
+                              }
+                            >
+                              {expanded ? "Tutup detail" : "View detail"}
+                            </button>
+                            <button
+                              disabled={busy || d.status !== "DRAFT"}
+                              onClick={() =>
+                                void run(async () => {
+                                  await mutate(
+                                    `/operations/documents/${d.id}/submit`,
+                                    { warehouseId: warehouse },
+                                  );
+                                  await loadDocs(docType, docPage);
+                                  setMessage("Dokumen dikirim.");
+                                })
+                              }
+                            >
+                              Submit
+                            </button>
+                            {canVerify(docType) && (
+                              <button
+                                disabled={busy || d.status !== "PENDING"}
+                                onClick={() =>
+                                  void run(async () => {
+                                    await mutate(
+                                      `/operations/documents/${d.id}/verify`,
+                                      { warehouseId: warehouse },
+                                    );
+                                    await loadDocs(docType, docPage);
+                                    setMessage("Dokumen terverifikasi.");
+                                  })
+                                }
+                              >
+                                Verify
+                              </button>
+                            )}
+                            <button
+                              disabled={
+                                busy ||
+                                !rejectReason.trim() ||
+                                !["DRAFT", "PENDING"].includes(d.status)
+                              }
+                              onClick={() =>
+                                void run(async () => {
+                                  await mutate(
+                                    `/operations/documents/${d.id}/reject`,
+                                    {
+                                      warehouseId: warehouse,
+                                      reason: rejectReason,
+                                    },
+                                  );
+                                  await loadDocs(docType, docPage);
+                                  setMessage("Dokumen ditolak.");
+                                })
+                              }
+                            >
+                              Reject
+                            </button>
+                          </td>
+                        </tr>
+                        {expanded && (
+                          <tr className="connected-detail-row">
+                            <td colSpan={7}>
+                              {detail ? (
+                                <div className="connected-doc-detail">
+                                  <p>
+                                    <strong>{detail.type}</strong> /{" "}
+                                    {detail.status} /{" "}
+                                    {detail.supplierName || "-"} / Ref{" "}
+                                    {detail.reference || "-"}
+                                  </p>
+                                  <div className="connected-table compact">
+                                    <table>
+                                      <thead>
+                                        <tr>
+                                          <th>Produk</th>
+                                          <th>Lokasi</th>
+                                          <th>Dok</th>
+                                          <th>Aktual</th>
+                                          <th>UOM</th>
+                                          <th>Base</th>
+                                          <th>Batch</th>
+                                          <th>ED</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {detail.lines.map((line) => (
+                                          <tr key={line.id}>
+                                            <td>
+                                              {line.productId}{" "}
+                                              {line.productName
+                                                ? `- ${line.productName}`
+                                                : ""}
+                                              {line.bigsellerSku
+                                                ? ` / ${line.bigsellerSku}`
+                                                : ""}
+                                            </td>
+                                            <td>{line.locationId}</td>
+                                            <td>{line.documentQuantity}</td>
+                                            <td>{line.actualQuantity}</td>
+                                            <td>{line.uom}</td>
+                                            <td>{line.baseQuantity}</td>
+                                            <td>{line.batch || "-"}</td>
+                                            <td>
+                                              {String(line.expiry || "-").slice(
+                                                0,
+                                                10,
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p>Memuat detail...</p>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-            <button
-              disabled={busy || reportPage === 1}
-              onClick={() =>
-                void run(() => loadReports(reportKind, reportPage - 1))
-              }
-            >
-              Sebelumnya
-            </button>
-            <button
-              disabled={busy || reports.length >= reportTotal}
-              onClick={() =>
-                void run(() => loadReports(reportKind, reportPage + 1))
-              }
-            >
-              Berikutnya
-            </button>
-          </section>
-        )}
-        {page === "export" && role === "Head" && (
-          <section className="connected-card">
-            <h2>Export batch ({exports.length})</h2>
-            {!settings.templates?.[exportType]?.ready && (
-              <p className="connected-error">
-                {settings.templates?.[exportType]?.message ||
-                  "Template resmi BigSeller belum tersedia. Konfigurasikan BIGSELLER_TEMPLATE_DIR."}
-              </p>
-            )}
-            {eligible.map((d) => (
-              <label key={d.id}>
-                <input
-                  type="checkbox"
-                  checked={selectedDocs.includes(d.id)}
-                  onChange={(e) =>
-                    setSelectedDocs(
-                      e.target.checked
-                        ? [...selectedDocs, d.id]
-                        : selectedDocs.filter((id) => id !== d.id),
-                    )
-                  }
-                />
-                {d.reference || d.id}
-              </label>
-            ))}
             <div className="connected-actions">
               <label>
-                Tipe
-                <select
-                  value={exportType}
-                  onChange={(e) => {
-                    const type = e.target.value as "PO" | "SR";
-                    setExportType(type);
-                    void run(() => loadExports(type));
-                  }}
-                >
-                  <option value="PO">PO receiving</option>
-                  <option value="SR">Stock reduction</option>
-                </select>
+                Alasan reject
+                <input
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                />
               </label>
               <button
-                className="button primary"
-                disabled={
-                  busy ||
-                  !settings.templates?.[exportType]?.ready ||
-                  !selectedDocs.length
-                }
-                onClick={() =>
+                disabled={busy || docPage === 1}
+                onClick={() => void run(() => loadDocs(docType, docPage - 1))}
+              >
+                Sebelumnya
+              </button>
+              <button
+                disabled={busy || docPage * pageSize >= docTotal}
+                onClick={() => void run(() => loadDocs(docType, docPage + 1))}
+              >
+                Berikutnya
+              </button>
+            </div>
+            {!docs.length && <p>Belum ada dokumen.</p>}
+          </section>
+          {canCreate(docType) && (
+            <section className="connected-card">
+              <h2>Buat {docType === "RECEIVING" ? "receiving" : "issue"}</h2>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
                   void run(async () => {
-                    await mutate("/operations/exports", {
-                      warehouseId: warehouse,
-                      type: exportType,
-                      documentIds: selectedDocs,
-                    });
-                    await loadExports();
-                    setMessage("Export dibuat.");
+                    await mutate("/operations/documents", submitPayload());
+                    setLines([emptyLine()]);
+                    setReference("");
+                    await loadDocs(docType, 1);
+                    setMessage("Draft dokumen tersimpan.");
+                  });
+                }}
+              >
+                <div className="connected-inline">
+                  {docType === "RECEIVING" && (
+                    <>
+                      <label>
+                        Supplier
+                        <select
+                          value={supplierId}
+                          onChange={(e) => setSupplierId(e.target.value)}
+                        >
+                          <option value="">Pilih supplier</option>
+                          {master.suppliers.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {["Admin", "Head"].includes(role || "") && (
+                        <label>
+                          Supplier baru
+                          <input
+                            value={newSupplier}
+                            onChange={(e) => setNewSupplier(e.target.value)}
+                            placeholder="Nama supplier"
+                          />
+                        </label>
+                      )}
+                      {["Admin", "Head"].includes(role || "") && (
+                        <button
+                          type="button"
+                          className="button"
+                          disabled={busy || !newSupplier.trim()}
+                          onClick={() => void run(createSupplier)}
+                        >
+                          Tambah supplier
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <label>
+                    Referensi
+                    <input
+                      value={reference}
+                      onChange={(e) => setReference(e.target.value)}
+                      placeholder={
+                        docType === "RECEIVING"
+                          ? "Surat jalan"
+                          : "Tujuan/alasan"
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="connected-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Produk</th>
+                        <th>Lokasi</th>
+                        <th>Dokumen</th>
+                        <th>Aktual</th>
+                        <th>UoM</th>
+                        <th>Batch</th>
+                        <th>ED</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((l, i) => (
+                        <tr key={i}>
+                          <td>
+                            <select
+                              value={l.productId}
+                              onChange={(e) =>
+                                updateLine(i, "productId", e.target.value)
+                              }
+                            >
+                              <option value="">Produk</option>
+                              {master.products.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.sku || p.id} {p.name || ""}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <select
+                              value={l.locationId}
+                              onChange={(e) =>
+                                updateLine(i, "locationId", e.target.value)
+                              }
+                            >
+                              <option value="">Lokasi</option>
+                              {master.locations.map((loc) => (
+                                <option key={loc.id} value={loc.id}>
+                                  {loc.code || loc.id}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={l.documentQuantity}
+                              onChange={(e) =>
+                                updateLine(
+                                  i,
+                                  "documentQuantity",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={l.actualQuantity}
+                              onChange={(e) =>
+                                updateLine(i, "actualQuantity", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td>
+                            <select
+                              value={l.uom}
+                              onChange={(e) =>
+                                updateLine(i, "uom", e.target.value)
+                              }
+                            >
+                              {uomOptions(l.productId).map((u) => (
+                                <option key={u} value={u}>
+                                  {u}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              value={l.batch}
+                              onChange={(e) =>
+                                updateLine(i, "batch", e.target.value)
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="date"
+                              value={l.expiry}
+                              onChange={(e) =>
+                                updateLine(i, "expiry", e.target.value)
+                              }
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="connected-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => setLines([...lines, emptyLine()])}
+                  >
+                    Tambah baris
+                  </button>
+                  <button className="button primary" disabled={busy}>
+                    Simpan draft
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
+        </>
+      )}
+
+      {page === "counts" && (
+        <CountWorkspace
+          key={warehouse}
+          embedded
+          parentSession={session}
+          parentWarehouse={warehouse}
+          onUnauthorized={() => setSession(null)}
+        />
+      )}
+      {page === "reports" && ["Admin", "Head"].includes(role || "") && (
+        <section className="connected-card">
+          <div className="connected-inline">
+            <h2>
+              Laporan ({reports.length}/{reportTotal})
+            </h2>
+            <label>
+              Jenis
+              <select
+                value={reportKind}
+                onChange={(e) =>
+                  void run(() => loadReports(e.target.value as ReportKind, 1))
+                }
+              >
+                <option value="stock">Stock</option>
+                <option value="activity">Activity</option>
+              </select>
+            </label>
+            <button
+              className="button"
+              onClick={() => {
+                location.href = reportCsvUrl();
+              }}
+            >
+              Unduh CSV halaman ini
+            </button>
+          </div>
+          <form
+            className="connected-settings"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(() => loadReports(reportKind, 1));
+            }}
+          >
+            <label>
+              Dari
+              <input
+                type="date"
+                value={reportFilters.from}
+                disabled={reportKind === "stock"}
+                onChange={(e) =>
+                  setReportFilters({ ...reportFilters, from: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Sampai
+              <input
+                type="date"
+                value={reportFilters.to}
+                disabled={reportKind === "stock"}
+                onChange={(e) =>
+                  setReportFilters({ ...reportFilters, to: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Produk
+              <select
+                value={reportFilters.product}
+                onChange={(e) =>
+                  setReportFilters({
+                    ...reportFilters,
+                    product: e.target.value,
                   })
                 }
               >
-                Buat export dari pilihan dokumen
-              </button>
-            </div>
-            <div className="connected-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Job</th>
-                    <th>Tipe</th>
-                    <th>Status</th>
-                    <th>Dokumen</th>
-                    <th>File</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exports.map((x) => (
-                    <tr key={x.id}>
-                      <td>
-                        <code>{x.id}</code>
-                      </td>
-                      <td>{x.type}</td>
-                      <td>
-                        {x.status}
-                        <br />
-                        <small>{x.checksum}</small>
-                      </td>
-                      <td>{x.documentCount ?? "-"}</td>
-                      <td>
-                        <button
-                          disabled={busy || !x.fileName}
-                          onClick={() => {
-                            location.href = `/api/operations/exports/${x.id}/file?warehouseId=${encodeURIComponent(warehouse)}`;
-                          }}
-                        >
-                          Unduh
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-        {page === "settings" && (
-          <section className="connected-card">
-            <h2>Pengaturan operasi</h2>
-            <form
-              className="connected-settings"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  const saved = await mutate<OpsSettings>(
-                    `/operations/settings?warehouseId=${encodeURIComponent(warehouse)}`,
-                    {
-                      reportPageSize: settings.reportPageSize,
-                      reportDefaultDays: settings.reportDefaultDays,
-                      csvDelimiter: settings.csvDelimiter,
-                      exportWarehouseName: settings.exportWarehouseName,
-                    },
-                    "PATCH",
-                  );
-                  setSettings({ ...settings, ...saved });
-                  setMessage("Pengaturan tersimpan.");
-                });
-              }}
-            >
-              <label>
-                Baris laporan
-                <input
-                  type="number"
-                  min="1"
-                  max="500"
-                  value={settings.reportPageSize}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      reportPageSize: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Default hari laporan
-                <input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={settings.reportDefaultDays}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      reportDefaultDays: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Delimiter CSV
-                <input
-                  value={settings.csvDelimiter}
-                  maxLength={3}
-                  onChange={(e) =>
-                    setSettings({ ...settings, csvDelimiter: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Nama gudang export
-                <input
-                  value={settings.exportWarehouseName}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      exportWarehouseName: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="connected-check">
-                <input
-                  type="checkbox"
-                  checked={settings.bigsellerTemplateConfirmed}
-                  disabled
-                  readOnly
-                />
-                Kesiapan template terdeteksi server (bukan konfirmasi manual)
-              </label>
-              <button
-                className="button primary"
-                disabled={busy || !["Head", "Admin"].includes(role || "")}
+                <option value="">Semua produk</option>
+                {master.products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.sku || p.id} {p.name ? `- ${p.name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Lokasi
+              <select
+                value={reportFilters.location}
+                onChange={(e) =>
+                  setReportFilters({
+                    ...reportFilters,
+                    location: e.target.value,
+                  })
+                }
               >
-                Simpan settings
-              </button>
-            </form>
-            {role === "Head" && (
-              <div>
-                <label>
-                  Supplier baru
-                  <input
-                    value={newSupplier}
-                    onChange={(e) => setNewSupplier(e.target.value)}
-                  />
-                </label>
-                <button
-                  disabled={busy || !newSupplier.trim()}
-                  onClick={() => void run(createSupplier)}
-                >
-                  Tambah supplier
-                </button>
-              </div>
-            )}
-            <h3>Konfigurasi produk master</h3>
-            <p>
-              Tracking dan konversi global hanya-baca. Pemetaan SKU dan
-              konfirmasi registrasi berlaku hanya untuk gudang aktif, dikelola
-              Head.
+                <option value="">Semua lokasi</option>
+                {master.locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.code || l.id} {l.name ? `- ${l.name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Actor
+              <input
+                value={reportFilters.actor}
+                disabled={reportKind === "stock"}
+                placeholder="UUID actor activity"
+                onChange={(e) =>
+                  setReportFilters({
+                    ...reportFilters,
+                    actor: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <button className="button primary" disabled={busy}>
+              Terapkan filter
+            </button>
+          </form>
+          <p>
+            CSV mengunduh halaman yang sedang tampil, bukan full export. Stock
+            menampilkan on-hand lifetime; tanggal dan actor hanya untuk
+            activity.
+          </p>
+          <div className="connected-table">
+            <table>
+              <thead>
+                <tr>
+                  {Object.keys(reports[0] || { empty: "" }).map((k) => (
+                    <th key={k}>{k}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {!reports.length && (
+                  <tr>
+                    <td colSpan={10}>Belum ada data untuk filter ini.</td>
+                  </tr>
+                )}
+                {reports.map((r, i) => (
+                  <tr key={i}>
+                    {Object.keys(reports[0] || r).map((k) => (
+                      <td key={k}>{String(r[k] ?? "-")}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button
+            disabled={busy || reportPage === 1}
+            onClick={() =>
+              void run(() => loadReports(reportKind, reportPage - 1))
+            }
+          >
+            Sebelumnya
+          </button>
+          <button
+            disabled={busy || reportPage * pageSize >= reportTotal}
+            onClick={() =>
+              void run(() => loadReports(reportKind, reportPage + 1))
+            }
+          >
+            Berikutnya
+          </button>
+        </section>
+      )}
+      {page === "export" && role === "Head" && (
+        <section className="connected-card">
+          <h2>Export batch ({exports.length})</h2>
+          {!settings.templates?.[exportType]?.ready && (
+            <p className="connected-error">
+              {settings.templates?.[exportType]?.message ||
+                "Template resmi BigSeller belum tersedia. Konfigurasikan BIGSELLER_TEMPLATE_DIR."}
             </p>
-            <form
-              className="connected-settings"
-              onSubmit={(e) => {
-                e.preventDefault();
+          )}
+          {!eligible.length && <p>Belum ada dokumen yang siap diekspor.</p>}
+          {eligible.map((d) => (
+            <label key={d.id}>
+              <input
+                type="checkbox"
+                checked={selectedDocs.includes(d.id)}
+                onChange={(e) =>
+                  setSelectedDocs(
+                    e.target.checked
+                      ? [...selectedDocs, d.id]
+                      : selectedDocs.filter((id) => id !== d.id),
+                  )
+                }
+              />
+              {d.reference || d.id}
+            </label>
+          ))}
+          <div className="connected-actions">
+            <label>
+              Tipe
+              <select
+                value={exportType}
+                onChange={(e) => {
+                  const type = e.target.value as "PO" | "SR";
+                  setExportType(type);
+                  void run(() => loadExports(type));
+                }}
+              >
+                <option value="PO">PO receiving</option>
+                <option value="SR">Stock reduction</option>
+              </select>
+            </label>
+            <button
+              className="button primary"
+              disabled={
+                busy ||
+                !settings.templates?.[exportType]?.ready ||
+                !selectedDocs.length
+              }
+              onClick={() =>
                 void run(async () => {
-                  if (!productConfig.id) throw new Error("Pilih produk dulu.");
-                  const saved = await mutate<Product>(
-                    `/operations/products/${encodeURIComponent(productConfig.id)}`,
-                    {
-                      bigsellerRegistered: productConfig.bigsellerRegistered,
-                      bigsellerSku: productConfig.bigsellerSku || null,
-                    },
-                    "PATCH",
-                  );
-                  setMaster({
-                    ...master,
-                    products: master.products.map((p) =>
-                      p.id === saved.id ? { ...p, ...saved } : p,
-                    ),
+                  await mutate("/operations/exports", {
+                    warehouseId: warehouse,
+                    type: exportType,
+                    documentIds: selectedDocs,
                   });
-                  selectProductConfig(saved.id);
-                  setMessage("Konfigurasi produk tersimpan.");
-                });
-              }}
+                  await loadExports();
+                  setMessage("Export dibuat.");
+                })
+              }
             >
+              Buat export dari pilihan dokumen
+            </button>
+          </div>
+          <div className="connected-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Tipe</th>
+                  <th>Status</th>
+                  <th>Dokumen</th>
+                  <th>File</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!exports.length && (
+                  <tr>
+                    <td colSpan={7}>Belum ada batch ekspor.</td>
+                  </tr>
+                )}
+                {exports.map((x) => (
+                  <tr key={x.id}>
+                    <td>
+                      <code>{x.id}</code>
+                    </td>
+                    <td>{x.type}</td>
+                    <td>
+                      {x.status}
+                      <br />
+                      <small>{x.checksum}</small>
+                    </td>
+                    <td>{x.documentCount ?? "-"}</td>
+                    <td>
+                      <button
+                        disabled={busy || !x.fileName}
+                        onClick={() => {
+                          location.href = `/api/operations/exports/${x.id}/file?warehouseId=${encodeURIComponent(warehouse)}`;
+                        }}
+                      >
+                        Unduh
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {page === "settings" && (
+        <section className="connected-card">
+          <h2>Pengaturan operasi</h2>
+          <form
+            className="connected-settings"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const saved = await mutate<OpsSettings>(
+                  `/operations/settings?warehouseId=${encodeURIComponent(warehouse)}`,
+                  {
+                    reportPageSize: settings.reportPageSize,
+                    reportDefaultDays: settings.reportDefaultDays,
+                    csvDelimiter: settings.csvDelimiter,
+                    exportWarehouseName: settings.exportWarehouseName,
+                  },
+                  "PATCH",
+                );
+                setSettings({ ...settings, ...saved });
+                setMessage("Pengaturan tersimpan.");
+              });
+            }}
+          >
+            <label>
+              Baris laporan
+              <input
+                type="number"
+                min="1"
+                max="500"
+                value={settings.reportPageSize}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    reportPageSize: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label>
+              Default hari laporan
+              <input
+                type="number"
+                min="1"
+                max="365"
+                value={settings.reportDefaultDays}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    reportDefaultDays: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label>
+              Delimiter CSV
+              <input
+                value={settings.csvDelimiter}
+                maxLength={3}
+                onChange={(e) =>
+                  setSettings({ ...settings, csvDelimiter: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Nama gudang export
+              <input
+                value={settings.exportWarehouseName}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    exportWarehouseName: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label className="connected-check">
+              <input
+                type="checkbox"
+                checked={settings.bigsellerTemplateConfirmed}
+                disabled
+                readOnly
+              />
+              Kesiapan template terdeteksi server (bukan konfirmasi manual)
+            </label>
+            <button
+              className="button primary"
+              disabled={busy || !["Head", "Admin"].includes(role || "")}
+            >
+              Simpan settings
+            </button>
+          </form>
+          {role === "Head" && (
+            <div>
               <label>
-                Produk
-                <select
-                  value={productConfig.id}
-                  onChange={(e) => selectProductConfig(e.target.value)}
-                >
-                  <option value="">Pilih produk</option>
-                  {master.products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku || p.id} {p.name ? `- ${p.name}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="connected-check">
+                Supplier baru
                 <input
-                  type="checkbox"
-                  disabled
-                  checked={productConfig.trackBatch}
-                  onChange={(e) =>
-                    setProductConfig({
-                      ...productConfig,
-                      trackBatch: e.target.checked,
-                      trackExpiry: e.target.checked
-                        ? productConfig.trackExpiry
-                        : false,
-                    })
-                  }
-                />
-                Track batch
-              </label>
-              <label className="connected-check">
-                <input
-                  type="checkbox"
-                  checked={productConfig.trackExpiry}
-                  disabled
-                  onChange={(e) =>
-                    setProductConfig({
-                      ...productConfig,
-                      trackExpiry: e.target.checked,
-                    })
-                  }
-                />
-                Track expiry
-              </label>
-              <label>
-                UOM
-                <input
-                  disabled
-                  value={productConfig.uom}
-                  maxLength={20}
-                  onChange={(e) =>
-                    setProductConfig({ ...productConfig, uom: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                UOM factor
-                <input
-                  type="number"
-                  min="1"
-                  max="1000000"
-                  disabled
-                  value={productConfig.uomFactor}
-                  onChange={(e) =>
-                    setProductConfig({
-                      ...productConfig,
-                      uomFactor: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={productConfig.bigsellerRegistered}
-                  onChange={(e) =>
-                    setProductConfig({
-                      ...productConfig,
-                      bigsellerRegistered: e.target.checked,
-                    })
-                  }
-                />
-                SKU sudah terdaftar di BigSeller
-              </label>
-              <label>
-                BigSeller SKU
-                <input
-                  value={productConfig.bigsellerSku}
-                  onChange={(e) =>
-                    setProductConfig({
-                      ...productConfig,
-                      bigsellerSku: e.target.value,
-                    })
-                  }
+                  value={newSupplier}
+                  onChange={(e) => setNewSupplier(e.target.value)}
                 />
               </label>
               <button
-                className="button primary"
-                disabled={busy || role !== "Head"}
+                disabled={busy || !newSupplier.trim()}
+                onClick={() => void run(createSupplier)}
               >
-                Simpan konfigurasi produk
+                Tambah supplier
               </button>
-            </form>
-          </section>
-        )}
-        {page === "inventory" && (
-          <section className="connected-card">
-            <h2>Inventori ({inventory.length})</h2>
-            <div className="connected-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Lokasi</th>
-                    <th>Produk</th>
-                    <th>Batch</th>
-                    <th>Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventory.map((l, i) => (
-                    <tr key={i}>
-                      <td>{l.location}</td>
-                      <td>{l.product}</td>
-                      <td>{l.batch || "-"}</td>
-                      <td>{l.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
-          </section>
-        )}
-      </main>
-    </div>
+          )}
+          <h3>Konfigurasi produk master</h3>
+          <p>
+            Tracking dan konversi global hanya-baca. Pemetaan SKU dan konfirmasi
+            registrasi berlaku hanya untuk gudang aktif, dikelola Head.
+          </p>
+          <form
+            className="connected-settings"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                if (!productConfig.id) throw new Error("Pilih produk dulu.");
+                const saved = await mutate<Product>(
+                  `/operations/products/${encodeURIComponent(productConfig.id)}`,
+                  {
+                    bigsellerRegistered: productConfig.bigsellerRegistered,
+                    bigsellerSku: productConfig.bigsellerSku || null,
+                  },
+                  "PATCH",
+                );
+                setMaster({
+                  ...master,
+                  products: master.products.map((p) =>
+                    p.id === saved.id ? { ...p, ...saved } : p,
+                  ),
+                });
+                selectProductConfig(saved.id);
+                setMessage("Konfigurasi produk tersimpan.");
+              });
+            }}
+          >
+            <label>
+              Produk
+              <select
+                value={productConfig.id}
+                onChange={(e) => selectProductConfig(e.target.value)}
+              >
+                <option value="">Pilih produk</option>
+                {master.products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.sku || p.id} {p.name ? `- ${p.name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="connected-check">
+              <input
+                type="checkbox"
+                disabled
+                checked={productConfig.trackBatch}
+                onChange={(e) =>
+                  setProductConfig({
+                    ...productConfig,
+                    trackBatch: e.target.checked,
+                    trackExpiry: e.target.checked
+                      ? productConfig.trackExpiry
+                      : false,
+                  })
+                }
+              />
+              Track batch
+            </label>
+            <label className="connected-check">
+              <input
+                type="checkbox"
+                checked={productConfig.trackExpiry}
+                disabled
+                onChange={(e) =>
+                  setProductConfig({
+                    ...productConfig,
+                    trackExpiry: e.target.checked,
+                  })
+                }
+              />
+              Track expiry
+            </label>
+            <label>
+              UOM
+              <input
+                disabled
+                value={productConfig.uom}
+                maxLength={20}
+                onChange={(e) =>
+                  setProductConfig({ ...productConfig, uom: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              UOM factor
+              <input
+                type="number"
+                min="1"
+                max="1000000"
+                disabled
+                value={productConfig.uomFactor}
+                onChange={(e) =>
+                  setProductConfig({
+                    ...productConfig,
+                    uomFactor: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={productConfig.bigsellerRegistered}
+                onChange={(e) =>
+                  setProductConfig({
+                    ...productConfig,
+                    bigsellerRegistered: e.target.checked,
+                  })
+                }
+              />
+              SKU sudah terdaftar di BigSeller
+            </label>
+            <label>
+              BigSeller SKU
+              <input
+                value={productConfig.bigsellerSku}
+                onChange={(e) =>
+                  setProductConfig({
+                    ...productConfig,
+                    bigsellerSku: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <button
+              className="button primary"
+              disabled={busy || role !== "Head"}
+            >
+              Simpan konfigurasi produk
+            </button>
+          </form>
+        </section>
+      )}
+      {page === "inventory" && (
+        <section className="connected-card">
+          <h2>Inventori ({inventory.length})</h2>
+          <div className="connected-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Lokasi</th>
+                  <th>Produk</th>
+                  <th>Batch</th>
+                  <th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!inventory.length && (
+                  <tr>
+                    <td colSpan={4}>
+                      Belum ada saldo inventori di gudang ini.
+                    </td>
+                  </tr>
+                )}
+                {inventory.map((l, i) => (
+                  <tr key={i}>
+                    <td>{l.location}</td>
+                    <td>{l.product}</td>
+                    <td>{l.batch || "-"}</td>
+                    <td>{l.quantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </ConnectedLayout>
   );
 }
 

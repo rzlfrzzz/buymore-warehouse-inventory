@@ -2,56 +2,99 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 import { ConnectedWorkspace, OperationsWorkspace } from "./ConnectedWorkspace";
-
-const headSession = {
-  user: { id: "u1", username: "head" },
-  memberships: [{ warehouse: "WH1", role: "Head" as const }],
-};
-
-const checkerSession = {
-  user: { id: "u2", username: "checker" },
-  memberships: [{ warehouse: "WH1", role: "Checker" as const }],
-};
-
+import { allowedConnectedPages } from "../layouts/ConnectedLayout";
+import { CountWorkspace } from "./CountWorkspace";
+import type { AuthSession } from "../services/api";
+const session = (
+  role: AuthSession["memberships"][number]["role"],
+): AuthSession => ({
+  user: { id: "u1", username: "actual-user" },
+  memberships: [{ warehouse: "WH2", role }],
+});
+const render = (role: AuthSession["memberships"][number]["role"]) =>
+  renderToStaticMarkup(
+    <OperationsWorkspace
+      initialSession={session(role)}
+      initialWarehouse="WH2"
+      initialBoot={false}
+    />,
+  );
 describe("active connected workspace", () => {
-  it("renders loading state without exposing demo roles or balances", () => {
+  it("renders boot status without demo data", () => {
     const html = renderToStaticMarkup(<ConnectedWorkspace />);
+    expect(html).toContain('role="status"');
     expect(html).toContain("Menghubungkan");
-    expect(html).not.toContain("localStorage");
+    expect(html).not.toContain("Peran demo");
   });
-
-  it("renders module navigation for Head without duplicate login", () => {
+  it("retains original shell and dashboard with actual identity and unknown rather than fake KPIs", () => {
+    const html = render("Head");
+    for (const label of [
+      "Ringkasan",
+      "Penerimaan",
+      "Pengeluaran",
+      "Laporan &amp; audit",
+      "Ekspor BigSeller",
+      "Pengaturan",
+      "Stock count",
+      "Inventori",
+      "actual-user",
+      "WH2",
+      "hero-panel",
+      "stat-card",
+      'aria-current="page"',
+      'aria-controls="workspace-navigation"',
+    ])
+      expect(html).toContain(label);
+    expect(html).not.toContain("Peran demo");
+    expect(html).not.toContain("GDG-01");
+    expect(html).toContain("?");
+  });
+  it("restricts navigation to membership permissions", () => {
+    expect(allowedConnectedPages("Staff")).not.toContain("inventory");
+    expect(allowedConnectedPages("Staff")).not.toContain("reports");
+    expect(allowedConnectedPages("Checker")).not.toContain("export");
+    expect(allowedConnectedPages("Admin")).toContain("reports");
+    expect(allowedConnectedPages("Admin")).not.toContain("export");
+    expect(allowedConnectedPages("System Admin")).toEqual(["dashboard"]);
+    expect(render("Staff")).not.toContain("Inventori");
+    expect(render("Checker")).not.toContain("Laporan &amp; audit");
+  });
+  it("uses credential login in the original split composition, never a role selector", () => {
+    const html = renderToStaticMarkup(
+      <OperationsWorkspace initialBoot={false} />,
+    );
+    expect(html).toContain("login-story");
+    expect(html).toContain("Kerja lebih tenang");
+    expect(html).toContain('autoComplete="username"');
+    expect(html).toContain('type="password"');
+    expect(html).toContain("Masuk ke workspace");
+    expect(html).not.toContain("<select");
+  });
+  it("shows an actionable empty membership state", () => {
     const html = renderToStaticMarkup(
       <OperationsWorkspace
-        initialSession={headSession}
-        initialWarehouse="WH1"
+        initialSession={{
+          user: { id: "u", username: "unassigned" },
+          memberships: [],
+        }}
         initialBoot={false}
       />,
     );
-
-    expect(html).toContain("Receiving");
-    expect(html).toContain("Issue");
-    expect(html).toContain("Aksi");
-    expect(html).toContain("Reports");
-    expect(html).toContain("Export");
-    expect(html).toContain("Settings");
-    expect(html).toContain("Stock count");
-    expect(html).toContain("Inventori");
-    expect(html).not.toContain("Masuk ke gudang");
+    expect(html).toContain("Hubungi administrator");
+    expect(html).not.toContain("Dokumen penerimaan");
   });
-
-  it("renders Checker navigation including stock count", () => {
+  it("embeds counts with the parent warehouse and role instead of a second login", () => {
     const html = renderToStaticMarkup(
-      <OperationsWorkspace
-        initialSession={checkerSession}
-        initialWarehouse="WH1"
-        initialBoot={false}
+      <CountWorkspace
+        embedded
+        parentSession={session("Staff")}
+        parentWarehouse="WH2"
       />,
     );
-
-    expect(html).toContain("checker / Checker");
-    expect(html).toContain("Stock count");
-    expect(html).toContain("Settings");
-    expect(html).not.toContain("Masuk ke gudang");
+    expect(html).toContain("WH2");
+    expect(html).toContain("blind count tanpa saldo sistem");
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain("connected-sidebar");
+    expect(html).not.toContain("<main");
   });
 });
