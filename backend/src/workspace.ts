@@ -813,8 +813,10 @@ export async function handleWorkspace(ctx: Context) {
         const code = text(get(row, "code"), `SKU at row ${index + 2}`, 64),
           name = get(row, "name") ? text(get(row, "name"), "name") : null,
           unit = get(row, "unit") || defaultUnit;
+        // BigSeller SKU values are identifiers, not necessarily ASCII codes;
+        // preserve their text exactly after trimming surrounding whitespace.
         need(
-          /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(code),
+          code.length > 0 && code.length <= 64 && !/[\u0000-\u001f\u007f]/.test(code),
           `Invalid SKU at row ${index + 2}; use text SKUs`,
         );
         const identity = JSON.stringify([name, unit]);
