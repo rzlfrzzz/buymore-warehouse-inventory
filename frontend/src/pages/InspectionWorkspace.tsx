@@ -401,6 +401,7 @@ export function InspectionWorkspace({
           )[page],
         );
         stopCamera();
+        if (page === "counts" || page === "reports") void load();
       }}
       busy={busy}
       logout={() =>
@@ -740,13 +741,17 @@ export function InspectionWorkspace({
                           i.status === "PENDING" &&
                           ["approve", "reject"].map((action) => (
                             <button
-                              disabled={busy || !reviewReason.trim()}
+                              disabled={busy}
                               key={action}
                               onClick={() =>
                                 run(async () => {
+                                  if (!reviewReason.trim())
+                                    throw new Error(
+                                      "Isi alasan review sebelum menyetujui atau menolak inspeksi.",
+                                    );
                                   await mutate(
                                     `/workspace/inspections/${i.id}/${action}`,
-                                    { reason: reviewReason },
+                                    { reason: reviewReason.trim() },
                                   );
                                   await load();
                                   setNotice(
@@ -1085,6 +1090,7 @@ export function InspectionWorkspace({
                       });
                       setPreview(null);
                       setFile(null);
+                      setSearch("");
                       await load();
                       setNotice(
                         "Impor berhasil, seluruh baris tersimpan secara atomik.",

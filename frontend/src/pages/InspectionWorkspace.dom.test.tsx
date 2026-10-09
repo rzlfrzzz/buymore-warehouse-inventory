@@ -155,6 +155,77 @@ describe("active inspection DOM", () => {
       ).value,
     ).toBe("");
   });
+  it("refreshes imported master products when returning to inspection", async () => {
+    let imported = false;
+    mockApi((path) => {
+      if (path.endsWith("/catalog"))
+        return response({ ...catalog, products: imported ? [product] : [] });
+    });
+    await mount();
+    expect(host.textContent).toContain("Master belum tersedia");
+    await click("Master & impor");
+    imported = true;
+    await click("Inspeksi stok");
+    expect(host.textContent).toContain("Master item");
+  });
+  it.each(["Setujui", "Tolak"])(
+    "explains missing review reason and submits %s after it is filled",
+    async (action) => {
+      let reviewed = false;
+      const fetch = mockApi((path) => {
+        if (path.endsWith("/approve") || path.endsWith("/reject")) {
+          reviewed = true;
+          return response({ ok: true });
+        }
+        if (path.endsWith("/inspections"))
+          return response([
+            {
+              id: "inspection-1",
+              product: "SKU1",
+              name: "Master item",
+              location: "L",
+              batch: "",
+              quantity: 1,
+              unit: "PCS",
+              snapshot: 0,
+              base_quantity: 1,
+              status: reviewed ? "APPROVED" : "PENDING",
+              username: "operator",
+              photo: "photo-1",
+            },
+          ]);
+      });
+      await mount();
+      await click("Tinjau inspeksi");
+      expect(button(action).disabled).toBe(false);
+      await click(action);
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        "Isi alasan review",
+      );
+      expect(reviewed).toBe(false);
+      await act(async () => {
+        const input = host.querySelector(
+          'input[placeholder="Wajib untuk setujui atau tolak"]',
+        )!;
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(input, "  Sesuai pemeriksaan  ");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await click(action);
+      expect(reviewed).toBe(true);
+      const request = fetch.mock.calls.find(([url]) =>
+        String(url).endsWith(action === "Setujui" ? "/approve" : "/reject"),
+      );
+      expect(JSON.parse(request![1]!.body as string)).toEqual({
+        reason: "Sesuai pemeriksaan",
+      });
+      expect(host.textContent).toContain(
+        action === "Setujui" ? "Stok resmi diperbarui." : "Inspeksi ditolak.",
+      );
+    },
+  );
   it("rejects stale warehouse results after a switch", async () => {
     let resolveOld!: (response: Response) => void;
     mockApi((path, init) => {
