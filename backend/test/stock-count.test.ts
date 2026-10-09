@@ -108,6 +108,141 @@ test("real PostgreSQL engine: blind snapshot, freeze, recount, separate posting,
     await db.close();
   }
 });
+test("fresh and additive location grants permit locking without table-wide UPDATE", async () => {
+  const { db } = await setup();
+  try {
+    await db.exec(
+      await readFile(
+        new URL("../../deploy/roles.sql", import.meta.url),
+        "utf8",
+      ),
+    );
+    const checkLockGrants = async () => {
+      assert.deepEqual(
+        (
+          await db.query(`SELECT
+          has_column_privilege('buymore_app','locations','id','UPDATE') AS id_update,
+          has_column_privilege('buymore_app','locations','warehouse','UPDATE') AS warehouse_update,
+          has_table_privilege('buymore_app','locations','UPDATE') AS table_update`)
+        ).rows,
+        [{ id_update: true, warehouse_update: false, table_update: false }],
+      );
+      await db.transaction(async (tx) => {
+        await tx.exec("SET LOCAL ROLE buymore_app");
+        assert.equal(
+          (
+            await tx.query(
+              "SELECT 1 FROM locations WHERE warehouse='W' AND id='A' FOR UPDATE",
+            )
+          ).rows.length,
+          1,
+        );
+      });
+    };
+    await checkLockGrants();
+    await db.exec("REVOKE UPDATE(id) ON locations FROM buymore_app");
+    await assert.rejects(
+      db.transaction(async (tx) => {
+        await tx.exec("SET LOCAL ROLE buymore_app");
+        await tx.query(
+          "SELECT 1 FROM locations WHERE warehouse='W' AND id='A' FOR UPDATE",
+        );
+      }),
+      /permission denied/,
+    );
+    const additive = await readFile(
+      new URL("../../deploy/location-lock-grants.sql", import.meta.url),
+      "utf8",
+    );
+    await db.exec(additive);
+    await db.exec(additive);
+    await checkLockGrants();
+  } finally {
+    await db.close();
+  }
+});
+test("snapshots exclude only archived zero balances and preserve completed history", async () => {
+  const { db, service: s } = await setup();
+  try {
+    await db.exec(`
+      INSERT INTO inventory_ledger(id,warehouse,location,product,delta,actor) VALUES
+        ('00000000-0000-0000-0000-000000000010','W','A','Q',5,'seed'),
+        ('00000000-0000-0000-0000-000000000011','W','A','Q',-5,'seed'),
+        ('00000000-0000-0000-0000-000000000012','W','A','NEW',3,'seed'),
+        ('00000000-0000-0000-0000-000000000013','W','A','NEW',-3,'seed');
+    `);
+    const original = await s.start(staff, "history-start", "A");
+    const lines = [
+      { product: "P", batch: "", quantity: 10 },
+      { product: "Q", batch: "", quantity: 0 },
+      { product: "NEW", batch: "", quantity: 0 },
+    ];
+    await s.submit(staff, "history-submit", original.id, lines);
+    await s.verify(admin, "history-verify", original.id, lines);
+    await s.approve(admin, "history-approve", original.id);
+    const history = await s.read(admin, original.id);
+    assert.equal(history.status, "COMPLETED");
+    assert.equal(history.lines.length, 3);
+    const ledger = (
+      await db.query("SELECT * FROM inventory_ledger ORDER BY id")
+    ).rows;
+
+    await db.exec("UPDATE products SET active=false WHERE code='Q'");
+    const next = await s.start(staff, "next-start", "A", original.id);
+    assert.deepEqual(
+      (await s.read(admin, next.id)).lines
+        .map((line) => [line.product, line.batch, line.system_quantity])
+        .sort(),
+      [
+        ["NEW", "", 0],
+        ["P", "", 10],
+      ],
+    );
+    const retained = lines.filter((line) => line.product !== "Q");
+    await s.submit(staff, "next-submit", next.id, retained);
+    await s.verify(admin, "next-verify", next.id, retained);
+    await s.approve(admin, "next-approve", next.id);
+    assert.deepEqual(await s.read(admin, original.id), history);
+    assert.deepEqual(
+      (await db.query("SELECT * FROM inventory_ledger ORDER BY id")).rows,
+      ledger,
+    );
+    await assert.rejects(
+      db.query(
+        "DELETE FROM stock_count_lines WHERE count_id=$1 AND product='Q'",
+        [original.id],
+      ),
+      /Count history cannot be deleted/,
+    );
+    await assert.rejects(
+      db.exec("DELETE FROM inventory_ledger WHERE product='Q'"),
+      /Append-only/,
+    );
+
+    // Legacy inactive nonzero stock must fail visibly, not disappear from the snapshot.
+    await db.exec("UPDATE products SET active=false WHERE code='P'");
+    await assert.rejects(
+      s.start(staff, "inactive-nonzero", "A"),
+      /archived or unknown/,
+    );
+    assert.equal(
+      (await db.query("SELECT * FROM stock_counts WHERE status='COUNTING'"))
+        .rows.length,
+      0,
+    );
+    assert.equal(
+      (
+        await db.query(
+          "SELECT * FROM command_receipts WHERE key='inactive-nonzero'",
+        )
+      ).rows.length,
+      0,
+    );
+    assert.deepEqual(await s.read(admin, original.id), history);
+  } finally {
+    await db.close();
+  }
+});
 test("zero variance produces no adjustment or ledger; cancellation releases freeze", async () => {
   const { db, service: s } = await setup();
   try {

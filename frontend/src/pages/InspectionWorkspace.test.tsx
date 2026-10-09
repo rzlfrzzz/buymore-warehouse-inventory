@@ -21,7 +21,7 @@ describe("production inspection UI", () => {
         "sidebar",
         "hero-panel",
         "real-user",
-        "Inspeksi stok",
+        "Stock count",
         "workspace-navigation",
       ])
         expect(html).toContain(text);

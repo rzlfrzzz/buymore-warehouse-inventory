@@ -135,7 +135,12 @@ export class StockCountService {
           [id, actor.warehouse, location, actor.id, correctionOf ?? null],
         );
         await db.query(
-          "INSERT INTO stock_count_lines(count_id,product,batch,system_quantity) SELECT $1,product,batch,sum(delta) FROM inventory_ledger WHERE warehouse=$2 AND location=$3 GROUP BY product,batch",
+          `INSERT INTO stock_count_lines(count_id,product,batch,system_quantity)
+           SELECT $1,l.product,l.batch,sum(l.delta)
+           FROM inventory_ledger l JOIN products p ON p.code=l.product
+           WHERE l.warehouse=$2 AND l.location=$3
+           GROUP BY l.product,l.batch,p.active
+           HAVING p.active OR sum(l.delta)<>0`,
           [id, actor.warehouse, location],
         );
         return { id, status: "COUNTING" };

@@ -26,6 +26,75 @@ const catalog = {
 };
 let root: Root;
 let host: HTMLDivElement;
+const inspectionCatalog = {
+  ...catalog,
+  products: [product, { ...product, code: "SKU2", name: "Other item" }],
+  locations: [{ id: "L1" }, { id: "L2" }],
+  batches: [
+    { product: "SKU1", batch: "B1" },
+    { product: "SKU1", batch: "B2" },
+  ],
+};
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+function mockCamera() {
+  const stop = vi.fn();
+  const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream;
+  const getUserMedia = vi.fn().mockResolvedValue(stream);
+  vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+  vi.spyOn(HTMLVideoElement.prototype, "videoWidth", "get").mockReturnValue(
+    640,
+  );
+  vi.spyOn(HTMLVideoElement.prototype, "videoHeight", "get").mockReturnValue(
+    480,
+  );
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
+    "data:image/jpeg;base64,cGhvdG8=",
+  );
+  return { stream, stop, getUserMedia };
+}
+function field(label: string) {
+  const found = [...host.querySelectorAll("label")].find(
+    (element) => element.firstChild?.textContent?.trim() === label,
+  );
+  if (!found) throw new Error(`Field missing: ${label}`);
+  return found.querySelector("input, select") as
+    HTMLInputElement | HTMLSelectElement;
+}
+async function changeField(label: string, value: string) {
+  await act(async () => {
+    const element = field(label);
+    const isSelect = element instanceof HTMLSelectElement;
+    Object.getOwnPropertyDescriptor(
+      isSelect ? HTMLSelectElement.prototype : HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(element, value);
+    element.dispatchEvent(
+      new Event(isSelect ? "change" : "input", { bubbles: true }),
+    );
+  });
+}
+async function selectProduct(code = "SKU1") {
+  await act(async () => {
+    const sku = [...host.querySelectorAll(".inspection-sku")].find(
+      (element) => element.textContent === code,
+    )!;
+    (sku.closest("button") as HTMLButtonElement).click();
+  });
+}
+async function capturePhoto() {
+  await click("Buka kamera");
+  await click("Ambil foto");
+}
 function button(text: string) {
   const found = [...host.querySelectorAll("button")].find(
     (b) =>
@@ -79,8 +148,160 @@ afterEach(async () => {
   if (root) await act(async () => root.unmount());
   host?.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 describe("active inspection DOM", () => {
+  it.each(["Lokasi", "Batch"])(
+    "clears quantity, capture and uploaded retry cache when %s changes",
+    async (label) => {
+      mockCamera();
+      let uploads = 0;
+      const fetch = mockApi((path, init) => {
+        if (path.endsWith("/catalog")) return response(inspectionCatalog);
+        if (path.endsWith("/photos") && init.method === "POST")
+          return response({ id: `photo-${++uploads}` });
+        if (path.endsWith("/inspections") && init.method === "POST")
+          return response({ error: "Try again" }, 500);
+      });
+      await mount("User");
+      await selectProduct();
+      await changeField("Stok teramati", "7");
+      await capturePhoto();
+      await click("Kirim untuk persetujuan");
+      await click("Kirim untuk persetujuan");
+      expect(uploads).toBe(1);
+      await changeField(label, label === "Lokasi" ? "L2" : "B2");
+      expect(field("Stok teramati").value).toBe("");
+      expect(host.querySelector('img[alt="Live photo inspeksi"]')).toBeNull();
+      expect(button("Kirim untuk persetujuan").disabled).toBe(true);
+      await changeField("Stok teramati", "9");
+      // Identical image bytes must not reuse the old context's uploaded photo.
+      await capturePhoto();
+      await click("Kirim untuk persetujuan");
+      expect(uploads).toBe(2);
+      const requests = fetch.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/inspections") && init?.method === "POST",
+      );
+      expect(
+        JSON.parse(requests[requests.length - 1][1]!.body as string),
+      ).toMatchObject({
+        location: label === "Lokasi" ? "L2" : "L1",
+        batch: label === "Batch" ? "B2" : "B1",
+        quantity: 9,
+        photo: "photo-2",
+      });
+    },
+  );
+  it.each(["photos", "inspections"])(
+    "locks inspection context while %s submission is pending",
+    async (stage) => {
+      mockCamera();
+      const pending = deferred<Response>();
+      const fetch = mockApi((path, init) => {
+        if (path.endsWith("/catalog")) return response(inspectionCatalog);
+        if (init.method === "POST" && path.endsWith(`/${stage}`))
+          return pending.promise;
+        if (path.endsWith("/photos")) return response({ id: "photo-1" });
+      });
+      await mount("User");
+      await selectProduct();
+      await changeField("Stok teramati", "7");
+      await capturePhoto();
+      await click("Kirim untuk persetujuan");
+      for (const label of ["Lokasi", "Batch", "Stok teramati", "Satuan"])
+        expect(field(label).disabled).toBe(true);
+      for (const text of [
+        "Ambil ulang",
+        "Kirim untuk persetujuan",
+        "Stock count",
+        "Riwayat saya",
+        "Keluar",
+      ])
+        expect(button(text).disabled).toBe(true);
+      expect(
+        (host.querySelector('[aria-label="Gudang aktif"]') as HTMLSelectElement)
+          .disabled,
+      ).toBe(true);
+      expect(
+        (
+          host.querySelector(
+            'input[placeholder="Cari SKU atau nama barang"]',
+          ) as HTMLInputElement
+        ).disabled,
+      ).toBe(true);
+      for (const item of host.querySelectorAll<HTMLButtonElement>(
+        ".inspection-products button",
+      ))
+        expect(item.disabled).toBe(true);
+      await selectProduct("SKU2");
+      expect(host.querySelector(".inspection-card h2")?.textContent).toBe(
+        "Master item",
+      );
+      await act(async () => {
+        host
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+      });
+      expect(
+        fetch.mock.calls.filter(
+          ([url, init]) =>
+            String(url).endsWith(`/${stage}`) && init?.method === "POST",
+        ),
+      ).toHaveLength(1);
+      await act(async () =>
+        pending.resolve(
+          response(stage === "photos" ? { id: "photo-1" } : { ok: true }),
+        ),
+      );
+      expect(field("Lokasi").disabled).toBe(false);
+      expect(field("Stok teramati").value).toBe("");
+      const request = fetch.mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/inspections") && init?.method === "POST",
+      );
+      expect(JSON.parse(request![1]!.body as string)).toMatchObject({
+        product: "SKU1",
+        location: "L1",
+        batch: "B1",
+        quantity: 7,
+        unit: "PCS",
+        photo: "photo-1",
+      });
+    },
+  );
+  it.each(["Lokasi", "Batch"])(
+    "stops an active camera when %s changes",
+    async (label) => {
+      const camera = mockCamera();
+      mockApi((path) =>
+        path.endsWith("/catalog") ? response(inspectionCatalog) : undefined,
+      );
+      await mount("User");
+      await selectProduct();
+      await click("Buka kamera");
+      await changeField(label, label === "Lokasi" ? "L2" : "B2");
+      expect(camera.stop).toHaveBeenCalledOnce();
+      expect(host.querySelector("video")).toBeNull();
+    },
+  );
+  it("stops a camera stream that arrives after unmount", async () => {
+    const camera = mockCamera();
+    const pending = deferred<MediaStream>();
+    camera.getUserMedia.mockReturnValue(pending.promise);
+    mockApi((path) =>
+      path.endsWith("/catalog") ? response(inspectionCatalog) : undefined,
+    );
+    await mount("User");
+    await selectProduct();
+    await click("Buka kamera");
+    await act(async () => root.render(null));
+    await act(async () => pending.resolve(camera.stream));
+    expect(camera.stop).toHaveBeenCalledOnce();
+    expect(host.querySelector("video")).toBeNull();
+  });
   it("shows master without locations even when inspection history fails", async () => {
     mockApi((path) =>
       path.endsWith("/inspections")
@@ -165,7 +386,7 @@ describe("active inspection DOM", () => {
     expect(host.textContent).toContain("Master belum tersedia");
     await click("Master & impor");
     imported = true;
-    await click("Inspeksi stok");
+    await click("Stock count");
     expect(host.textContent).toContain("Master item");
   });
   it.each(["Setujui", "Tolak"])(

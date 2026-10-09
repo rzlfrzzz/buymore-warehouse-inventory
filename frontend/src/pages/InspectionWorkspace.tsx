@@ -76,6 +76,7 @@ export function InspectionWorkspace({
     [photoView, setPhotoView] = useState("");
   const video = useRef<HTMLVideoElement>(null),
     stream = useRef<MediaStream | null>(null),
+    cameraVersion = useRef(0),
     pending = useRef(new Map<string, string>()),
     uploaded = useRef<{
       capture: string;
@@ -118,6 +119,7 @@ export function InspectionWorkspace({
     )?.role,
     admin = role === "Admin";
   function stopCamera() {
+    ++cameraVersion.current;
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
     setCamera(false);
@@ -137,6 +139,7 @@ export function InspectionWorkspace({
         });
     return () => {
       active = false;
+      ++cameraVersion.current;
       stream.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -221,6 +224,12 @@ export function InspectionWorkspace({
     };
   }, [warehouse, session]);
   useEffect(() => {
+    setCapture("");
+    uploaded.current = null;
+    setQuantity("");
+    stopCamera();
+  }, [selected?.code, location, batch]);
+  useEffect(() => {
     if (camera && video.current && stream.current) {
       video.current.srcObject = stream.current;
       video.current
@@ -268,15 +277,22 @@ export function InspectionWorkspace({
   }
   async function startCamera() {
     setCapture("");
+    uploaded.current = null;
     stopCamera();
+    const version = cameraVersion.current;
     if (!navigator.mediaDevices?.getUserMedia)
       throw new Error(
         "Live photo memerlukan HTTPS (atau localhost) dan browser dengan akses kamera.",
       );
-    stream.current = await navigator.mediaDevices.getUserMedia({
+    const nextStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
       audio: false,
     });
+    if (version !== cameraVersion.current) {
+      nextStream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    stream.current = nextStream;
     setCamera(true);
   }
   function takePhoto() {
@@ -459,6 +475,7 @@ export function InspectionWorkspace({
                 <Search size={18} />
                 <input
                   placeholder="Cari SKU atau nama barang"
+                  disabled={busy}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -474,6 +491,7 @@ export function InspectionWorkspace({
                     <button
                       className={selected?.code === p.code ? "selected" : ""}
                       key={p.code}
+                      disabled={busy}
                       onClick={() => {
                         stopCamera();
                         setSelected(p);
@@ -502,7 +520,7 @@ export function InspectionWorkspace({
                   ) && (
                     <p>
                       Tidak ada hasil pencarian.{" "}
-                      <button onClick={() => setSearch("")}>
+                      <button disabled={busy} onClick={() => setSearch("")}>
                         Hapus pencarian
                       </button>
                     </p>
@@ -530,6 +548,7 @@ export function InspectionWorkspace({
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
+                      if (busy) return;
                       run(async () => {
                         if (!capture)
                           throw new Error("Ambil live photo terlebih dahulu.");
@@ -567,6 +586,7 @@ export function InspectionWorkspace({
                       Lokasi
                       <select
                         required
+                        disabled={busy}
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
                       >
@@ -578,6 +598,7 @@ export function InspectionWorkspace({
                     <label>
                       Batch
                       <select
+                        disabled={busy}
                         value={batch}
                         onChange={(e) => setBatch(e.target.value)}
                       >
@@ -611,6 +632,7 @@ export function InspectionWorkspace({
                           min="0"
                           max="2147483647"
                           step="1"
+                          disabled={busy}
                           value={quantity}
                           onChange={(e) => setQuantity(e.target.value)}
                         />
@@ -618,6 +640,7 @@ export function InspectionWorkspace({
                       <label>
                         Satuan
                         <select
+                          disabled={busy}
                           value={unit}
                           onChange={(e) => setUnit(e.target.value)}
                         >
@@ -648,7 +671,11 @@ export function InspectionWorkspace({
                         {capture ? "Ambil ulang" : "Buka kamera"}
                       </button>
                       {camera && (
-                        <button type="button" onClick={takePhoto}>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={takePhoto}
+                        >
                           Ambil foto
                         </button>
                       )}
@@ -1021,10 +1048,11 @@ export function InspectionWorkspace({
                 Maksimal 2 MB / 2.000 baris. PO / SR hanya mengimpor master,
                 bukan jumlah transaksi. Nama kosong memakai nama lama atau kode
                 SKU sementara; edit nama setelah impor. Huruf dan nol awal SKU
-                dipertahankan sebagai teks. Jika muncul error <strong>Invalid SKU
-                at row N</strong>, pastikan kolom SKU di Excel disetel ke Text,
-                hapus spasi awal/akhir, dan pastikan SKU sudah benar sebelum
-                mengimpor. Hapus baris contoh template sebelum mengimpor.
+                dipertahankan sebagai teks. Jika muncul error{" "}
+                <strong>Invalid SKU at row N</strong>, pastikan kolom SKU di
+                Excel disetel ke Text, hapus spasi awal/akhir, dan pastikan SKU
+                sudah benar sebelum mengimpor. Hapus baris contoh template
+                sebelum mengimpor.
               </p>
               <label>
                 File XLSX / CSV (SKU dibaca sebagai teks)
