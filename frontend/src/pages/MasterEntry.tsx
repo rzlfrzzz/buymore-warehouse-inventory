@@ -5,11 +5,14 @@ export function MasterEntry({
   products,
   busy,
   save,
+  importBigSeller,
 }: {
   products: Product[];
   busy: boolean;
   save: (kind: string, data: Record<string, unknown>) => Promise<void>;
+  importBigSeller: (file: File) => Promise<void>;
 }) {
+  const [importName, setImportName] = useState("");
   const [product, setProduct] = useState({
     code: "",
     name: "",
@@ -28,6 +31,24 @@ export function MasterEntry({
         mengisi Penerimaan; Staff mengisi Stock count. Produk dan batch berlaku
         lintas gudang; lokasi dan supplier hanya untuk gudang aktif.
       </p>
+      <section className="connected-settings">
+        <h3>Impor master BigSeller</h3>
+        <p>Upload template XLSX/CSV BigSeller untuk menambahkan banyak SKU sekaligus.</p>
+        <input
+          type="file"
+          accept=".xlsx,.csv"
+          disabled={busy}
+          aria-label="File master BigSeller"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setImportName(file.name);
+            void importBigSeller(file).catch(() => {});
+            e.currentTarget.value = "";
+          }}
+        />
+        {importName && <small>File dipilih: {importName}</small>}
+      </section>
       <form
         className="connected-settings"
         onSubmit={(e) => {

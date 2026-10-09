@@ -229,6 +229,37 @@ export function OperationsWorkspace({
     intents.current.delete(identity);
     return result;
   }
+  async function importBigSeller(file: File) {
+    if (file.size > 2097152) throw new Error("Maksimal 2 MB");
+    const content = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(new Error("File tidak dapat dibaca"));
+      reader.readAsDataURL(file);
+    });
+    const payload = {
+      content,
+      format: file.name.toLowerCase().endsWith(".csv") ? "csv" : "xlsx",
+    };
+    const preview = await api<{ headers: string[]; template: string }>(
+      "/workspace/import/preview",
+      warehouse,
+      payload,
+    );
+    const code = preview.template === "PO" ? preview.headers[1] : preview.headers[0];
+    if (!code) throw new Error("Kolom SKU tidak ditemukan");
+    await mutate("/workspace/import", {
+      ...payload,
+      mapping: { code, name: "", unit: "", quantity: "" },
+      defaultUnit: "PCS",
+      defaultFactor: 1,
+      opening: false,
+      location: "",
+    });
+    await loadMaster();
+    setMessage("Impor master BigSeller berhasil.");
+  }
+
   async function authenticate() {
     const s = await api<AuthSession>("/session");
     setSession(s);
@@ -1147,6 +1178,18 @@ export function OperationsWorkspace({
           key={scope}
           products={master.products}
           busy={busy}
+          importBigSeller={async (file) => {
+            setBusy(true);
+            setError("");
+            try {
+              await importBigSeller(file);
+            } catch (e) {
+              fail(e);
+              throw e;
+            } finally {
+              setBusy(false);
+            }
+          }}
           save={async (kind, data) => {
             setBusy(true);
             setError("");
