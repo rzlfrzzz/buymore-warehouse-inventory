@@ -376,6 +376,45 @@ describe("active inspection DOM", () => {
       ).value,
     ).toBe("");
   });
+  it("auto-selects merchant XLSX SKU Name and Title preview columns", async () => {
+    const fetch = mockApi((path) => {
+      if (path.endsWith("/workspace/import/preview"))
+        return response({
+          headers: ["SKU Name", "Title"],
+          rows: [["0001/variant", "Merchant product title"]],
+          rowCount: 1,
+          template: "MASTER",
+        });
+    });
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(
+      function (this: FileReader) {
+        Object.defineProperty(this, "result", {
+          value: "data:application/octet-stream;base64,eGxzeA==",
+        });
+        this.dispatchEvent(new ProgressEvent("load"));
+      },
+    );
+    await mount();
+    await click("Master & impor");
+    await act(async () => {
+      const input = field("File XLSX / CSV (SKU dibaca sebagai teks)");
+      Object.defineProperty(input, "files", {
+        value: [new File(["xlsx"], "Merchant_SKU.xlsx")],
+      });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const request = fetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/workspace/import/preview"),
+    );
+    expect(request).toBeDefined();
+    expect(JSON.parse(request![1]!.body as string)).toMatchObject({
+      content: "eGxzeA==",
+      format: "xlsx",
+    });
+    expect(field("Kolom SKU").value).toBe("SKU Name");
+    expect(field("Kolom nama").value).toBe("Title");
+    expect(host.textContent).toContain("0001/variant");
+  });
   it("refreshes imported master products when returning to inspection", async () => {
     let imported = false;
     mockApi((path) => {

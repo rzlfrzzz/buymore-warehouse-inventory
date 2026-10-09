@@ -235,6 +235,9 @@ export async function parseMaster(input: Record<string, any>) {
   return {
     template,
     headers,
+    rowNumbers: rows.flatMap((row, index) =>
+      row.some(Boolean) ? [index + 2] : [],
+    ),
     rows: rows.filter((r) => r.some(Boolean)),
     checksum: createHash("sha256").update(data).digest("hex"),
   };
@@ -778,6 +781,12 @@ export async function handleWorkspace(ctx: Context) {
       "Column mapping required",
     );
     fields(mapping, ["code", "name", "unit", "quantity"]);
+    // These explicit BigSeller headers distinguish identifiers from display titles.
+    if (parsed.headers.includes("SKU Name") && parsed.headers.includes("Title"))
+      need(
+        mapping.code === "SKU Name" && mapping.name === "Title",
+        "BigSeller merchant export: map SKU to SKU Name and name to Title; titles are not SKU identifiers",
+      );
     for (const field of parsed.template === "MASTER"
       ? ["code", "name"]
       : ["code"])
@@ -810,14 +819,19 @@ export async function handleWorkspace(ctx: Context) {
     const seen = new Map<string, string>();
     const rows = parsed.rows
       .map((row, index) => {
-        const code = text(get(row, "code"), `SKU at row ${index + 2}`, 64),
+        const rowNumber = parsed.rowNumbers[index];
+        const code = text(
+            get(row, "code"),
+            `SKU at row ${rowNumber} (column ${mapping.code}; expected 1-64 characters)`,
+            64,
+          ),
           name = get(row, "name") ? text(get(row, "name"), "name") : null,
           unit = get(row, "unit") || defaultUnit;
         // BigSeller SKU values are identifiers, not necessarily ASCII codes;
         // preserve their text exactly after trimming surrounding whitespace.
         need(
           code.length > 0 && code.length <= 64 && !/[\u0000-\u001f\u007f]/.test(code),
-          `Invalid SKU at row ${index + 2}; use text SKUs`,
+          `Invalid SKU at row ${rowNumber} (column ${mapping.code}); use text SKUs without control characters`,
         );
         const identity = JSON.stringify([name, unit]);
         need(

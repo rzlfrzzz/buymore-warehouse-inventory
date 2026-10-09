@@ -1097,8 +1097,15 @@ export function InspectionWorkspace({
                             ? p.headers[1]
                             : p.template === "SR"
                               ? p.headers[0]
-                              : "",
-                        name: "",
+                              : p.headers.includes("SKU Name") &&
+                                  p.headers.includes("Title")
+                                ? "SKU Name"
+                                : "",
+                        name:
+                          p.headers.includes("SKU Name") &&
+                          p.headers.includes("Title")
+                            ? "Title"
+                            : "",
                         unit: "",
                         quantity: "",
                       });
