@@ -50,6 +50,7 @@ export function ConnectedLayout({
   logout,
   busy,
   children,
+  inspectionMode = false,
 }: {
   session: AuthSession;
   warehouse: string;
@@ -59,12 +60,47 @@ export function ConnectedLayout({
   logout: () => void;
   busy: boolean;
   children: ReactNode;
+  inspectionMode?: boolean;
 }) {
   const [menu, setMenu] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const role = session.memberships.find((m) => m.warehouse === warehouse)?.role;
-  const pages = allowedConnectedPages(role);
+  const navigation = inspectionMode
+    ? ([
+        {
+          id: "counts",
+          label: "Inspeksi stok",
+          icon: ClipboardCheck,
+          group: "WORKSPACE",
+        },
+        {
+          id: "reports",
+          label: role === "Admin" ? "Tinjau inspeksi" : "Riwayat saya",
+          icon: ChartNoAxesCombined,
+        },
+        ...(role === "Admin"
+          ? [
+              {
+                id: "inventory",
+                label: "Master & impor",
+                icon: Boxes,
+                group: "PENGELOLAAN",
+              },
+              { id: "export", label: "Ekspor PO / SR", icon: Download },
+              { id: "settings", label: "Pengguna", icon: Settings2 },
+            ]
+          : []),
+      ] as {
+        id: ConnectedPage;
+        label: string;
+        icon: typeof Boxes;
+        group?: string;
+      }[])
+    : connectedNavigation;
+  const pages = inspectionMode
+    ? navigation.map((n) => n.id)
+    : allowedConnectedPages(role);
   useEffect(() => {
     if (!menu) return;
     const previous = document.body.style.overflow;
@@ -155,7 +191,7 @@ export function ConnectedLayout({
           </label>
         </div>
         <nav aria-label="Menu utama">
-          {connectedNavigation
+          {navigation
             .filter((n) => pages.includes(n.id))
             .map((n) => (
               <div key={n.id}>
@@ -214,9 +250,7 @@ export function ConnectedLayout({
             </button>
             <span>Workspace</span>
             <span className="slash">/</span>
-            <strong>
-              {connectedNavigation.find((n) => n.id === page)?.label}
-            </strong>
+            <strong>{navigation.find((n) => n.id === page)?.label}</strong>
           </div>
           <div className="topbar-actions">
             <span className="shift-pill">

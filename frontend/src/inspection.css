@@ -344,3 +344,33 @@
     animation: none;
   }
 }
+
+.inspection-content {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  font-family: inherit;
+}
+.inspection-content .hero-panel {
+  padding: 32px;
+  margin-bottom: 24px;
+}
+.inspection-content .hero-panel p,
+.inspection-content .hero-panel h1,
+.inspection-content .hero-panel .inspection-metric {
+  color: white;
+}
+.inspection-reference {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.inspection-reference h3 {
+  margin-top: 0;
+}
+@media (max-width: 760px) {
+  .inspection-content .hero-panel {
+    padding: 22px;
+  }
+}

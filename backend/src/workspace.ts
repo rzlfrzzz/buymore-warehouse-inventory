@@ -6,6 +6,7 @@ import type { Runtime } from "./runtime.js";
 import type { Actor, DB } from "./stock-count.js";
 import { DomainError } from "./errors.js";
 import { hashPassword } from "./auth.js";
+import { buildWorkbook, knownHeaders, loadTemplate } from "./bigseller.js";
 type Context = {
   req: IncomingMessage;
   res: ServerResponse;
@@ -212,19 +213,27 @@ export async function parseMaster(input: Record<string, any>) {
     new Set(headers.filter(Boolean)).size === headers.filter(Boolean).length,
     "Duplicate column headers",
   );
-  need(
-    !headers.some((h) =>
-      /purchase order|purchase quantity|receiving quantity|nomor pesanan|jumlah pembelian|jumlah pengurangan stok|nomor penerimaan|supplier|pemasok|\*.*gudang/i.test(
-        h,
-      ),
-    ),
-    "This appears to be a PO/SR transaction template, not a BigSeller product master export",
-  );
+  const template =
+    headers[0] === knownHeaders.PO[1]
+      ? "PO"
+      : headers[0] === knownHeaders.SR[1]
+        ? "SR"
+        : "MASTER";
+  if (template !== "MASTER") {
+    need(
+      headers.length === (template === "PO" ? 51 : 3) &&
+        Object.entries(knownHeaders[template]).every(
+          ([column, header]) => headers[Number(column) - 1] === header,
+        ),
+      "Unrecognized PO/SR headers; use the official template",
+    );
+  }
   need(
     rows.some((row) => row.some(Boolean)),
     "No product rows in export",
   );
   return {
+    template,
     headers,
     rows: rows.filter((r) => r.some(Boolean)),
     checksum: createHash("sha256").update(data).digest("hex"),
@@ -463,7 +472,189 @@ export async function handleWorkspace(ctx: Context) {
       ),
     );
   }
+  const reference = path.match(/^\/api\/workspace\/reference-photos\/([^/]+)$/);
+  if (method === "GET" && reference) {
+    const product = decodeURIComponent(reference[1]);
+    const result = await db.transaction(
+      async (tx) =>
+        (
+          await tx.query(
+            "SELECT mime,content FROM product_reference_photos WHERE warehouse=$1 AND product=$2",
+            [actor.warehouse, product],
+          )
+        ).rows[0],
+    );
+    return send(
+      result
+        ? {
+            mime: result.mime,
+            content: Buffer.from(result.content).toString("base64"),
+          }
+        : null,
+    );
+  }
   admin(ctx);
+  if (method === "POST" && path === "/api/workspace/reference-photos") {
+    const input = await ctx.body(ctx.req);
+    fields(input, ["product", "mime", "content", "remove"]);
+    const product = text(input.product, "SKU", 64);
+    const data = input.remove === true ? null : bytes(input.content, 2097152);
+    if (data)
+      need(
+        (input.mime === "image/jpeg" &&
+          data.subarray(0, 3).toString("hex") === "ffd8ff" &&
+          data.subarray(-2).toString("hex") === "ffd9") ||
+          (input.mime === "image/png" &&
+            data.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" &&
+            data.subarray(-8).toString("hex") === "49454e44ae426082"),
+        "Invalid JPEG or PNG reference photo",
+      );
+    return send(
+      await command(ctx, "reference-photo.save", input, async (tx) => {
+        need(
+          (
+            await tx.query(
+              "SELECT 1 FROM products WHERE code=$1 AND active FOR SHARE",
+              [product],
+            )
+          ).rows.length,
+          "Unknown active SKU",
+          404,
+        );
+        if (!data)
+          await tx.query(
+            "DELETE FROM product_reference_photos WHERE warehouse=$1 AND product=$2",
+            [actor.warehouse, product],
+          );
+        else
+          await tx.query(
+            "INSERT INTO product_reference_photos(warehouse,product,mime,content,updated_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(warehouse,product) DO UPDATE SET mime=EXCLUDED.mime,content=EXCLUDED.content,updated_by=EXCLUDED.updated_by,updated_at=now()",
+            [actor.warehouse, product, input.mime, data, actor.id],
+          );
+        return { product, removed: !data };
+      }),
+    );
+  }
+  if (method === "POST" && path === "/api/workspace/products/archive") {
+    const input = await ctx.body(ctx.req);
+    fields(input, ["product"]);
+    const product = text(input.product, "SKU", 64);
+    return send(
+      await command(ctx, "master.archive", input, async (tx) => {
+        need(
+          (
+            await tx.query(
+              "SELECT 1 FROM products WHERE code=$1 AND active FOR UPDATE",
+              [product],
+            )
+          ).rows.length,
+          "Unknown active SKU",
+          404,
+        );
+        const conflicts = await tx.query(
+          `SELECT 1 FROM inventory_ledger WHERE product=$1 GROUP BY warehouse,location,batch HAVING sum(delta)<>0
+        UNION ALL SELECT 1 FROM inspections WHERE product=$1 AND status='PENDING'
+        UNION ALL SELECT 1 FROM inventory_reservations WHERE product=$1 AND status='ACTIVE'
+        UNION ALL SELECT 1 FROM operation_document_lines l JOIN operation_documents d ON d.id=l.document_id WHERE l.product=$1 AND d.status IN ('DRAFT','PENDING','VERIFIED')
+        UNION ALL SELECT 1 FROM stock_count_lines l JOIN stock_counts c ON c.id=l.count_id WHERE l.product=$1 AND c.status NOT IN ('COMPLETED','CANCELLED')`,
+          [product],
+        );
+        need(
+          !conflicts.rows.length,
+          "Cannot archive: SKU has stock or unfinished work in a warehouse. Catalog deletion is global; finish work and clear balances first.",
+          409,
+        );
+        await tx.query("UPDATE products SET active=false WHERE code=$1", [
+          product,
+        ]);
+        return { product, archived: true };
+      }),
+    );
+  }
+  if (method === "POST" && path === "/api/workspace/export") {
+    const input = await ctx.body(ctx.req);
+    fields(input, [
+      "type",
+      "lines",
+      "supplier",
+      "reference",
+      "confirmed",
+      "blank",
+    ]);
+    need(input.type === "PO" || input.type === "SR", "Choose PO or SR");
+    const type = input.type as "PO" | "SR";
+    if (input.blank === true) {
+      const { workbook, sheet } = await loadTemplate(type);
+      for (let r = 2; r <= sheet.rowCount; r++)
+        sheet.getRow(r).eachCell({ includeEmpty: true }, (cell) => {
+          cell.value = null;
+        });
+      return send({
+        filename: `BigSeller-${type}-blank.xlsx`,
+        content: Buffer.from(await workbook.xlsx.writeBuffer()).toString(
+          "base64",
+        ),
+      });
+    }
+    need(
+      input.confirmed === true,
+      "Confirm manual transaction quantities, not stock balances",
+    );
+    need(
+      Array.isArray(input.lines) &&
+        input.lines.length > 0 &&
+        input.lines.length <= 2000,
+      "Select 1-2000 lines",
+    );
+    const supplier =
+      type === "PO" ? text(input.supplier, "supplier") : undefined;
+    const reference =
+      type === "PO"
+        ? text(input.reference, "purchase reference", 64)
+        : undefined;
+    const codes = new Set<string>();
+    const lines = input.lines.map((line: Record<string, unknown>) => {
+      fields(line, ["product", "quantity"]);
+      const product = text(line.product, "SKU", 64);
+      need(!codes.has(product), "Duplicate export SKU");
+      codes.add(product);
+      return {
+        product,
+        quantity: integer(line.quantity, "intended transaction quantity", 1),
+      };
+    });
+    return send(
+      await command(ctx, "export.manual", input, async (tx) => {
+        for (const line of lines)
+          need(
+            (
+              await tx.query(
+                "SELECT 1 FROM products WHERE code=$1 AND active FOR SHARE",
+                [line.product],
+              )
+            ).rows.length,
+            "Unknown active SKU",
+          );
+        const result = await buildWorkbook(
+          type,
+          lines.map((line: { product: string; quantity: number }) => ({
+            ...line,
+            sku: line.product,
+            registered: true,
+            batch: "",
+            documentId: reference || "MANUAL",
+            supplier,
+            reference,
+          })),
+        );
+        return {
+          filename: `BigSeller-${type}-manual.xlsx`,
+          content: result.content.toString("base64"),
+          manual: true,
+        };
+      }),
+    );
+  }
   if (method === "GET" && path === "/api/workspace/users")
     return send(
       await db.transaction(
@@ -528,12 +719,23 @@ export async function handleWorkspace(ctx: Context) {
       unit = text(input.unit, "unit", 30),
       factor = integer(input.factor, "factor", 1);
     need(
-      /^[A-Z0-9][A-Z0-9._-]{0,63}$/.test(code),
-      "SKU must be uppercase text, digits, dot, dash or underscore (leading zeros preserved)",
+      /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(code),
+      "SKU must be text, digits, dot, dash or underscore (leading zeros preserved)",
     );
     need(unit !== "PCS" || factor === 1, "PCS is the base unit (factor 1)");
     return send(
       await command(ctx, "master.save", input, async (tx) => {
+        const existing = (
+          await tx.query(
+            "SELECT active FROM products WHERE code=$1 FOR UPDATE",
+            [code],
+          )
+        ).rows[0];
+        need(
+          !existing || existing.active,
+          "SKU is archived; choose a new SKU",
+          409,
+        );
         await tx.query(
           "INSERT INTO products(code,name,uom,uom_factor) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,uom=EXCLUDED.uom,uom_factor=EXCLUDED.uom_factor",
           [code, name, unit, factor],
@@ -551,6 +753,7 @@ export async function handleWorkspace(ctx: Context) {
     fields(input, ["content", "format"]);
     const parsed = await parseMaster(input);
     return send({
+      template: parsed.template,
       headers: parsed.headers,
       rows: parsed.rows.slice(0, 10),
       rowCount: parsed.rows.length,
@@ -575,13 +778,15 @@ export async function handleWorkspace(ctx: Context) {
       "Column mapping required",
     );
     fields(mapping, ["code", "name", "unit", "quantity"]);
-    for (const field of ["code", "name"])
+    for (const field of parsed.template === "MASTER"
+      ? ["code", "name"]
+      : ["code"])
       need(
         typeof mapping[field] === "string" &&
           parsed.headers.includes(mapping[field]),
         `Map ${field}`,
       );
-    for (const field of ["unit", "quantity"])
+    for (const field of ["name", "unit", "quantity"])
       need(
         !mapping[field] || parsed.headers.includes(mapping[field]),
         `Unknown ${field} column`,
@@ -592,40 +797,52 @@ export async function handleWorkspace(ctx: Context) {
     );
     const defaultUnit = text(input.defaultUnit, "default unit", 30),
       factor = integer(input.defaultFactor, "factor", 1);
+    need(
+      parsed.template === "MASTER" || !input.opening,
+      "PO/SR imports are master only; transaction quantities are never opening stock",
+    );
     if (input.opening) {
       text(input.location, "opening location", 100);
       need(mapping.quantity, "Map opening quantity");
     }
     const get = (row: string[], field: string) =>
       row[parsed.headers.indexOf(mapping[field])] || "";
-    const seen = new Set<string>();
-    const rows = parsed.rows.map((row, index) => {
-      const code = text(get(row, "code"), `SKU at row ${index + 2}`, 64),
-        name = text(get(row, "name"), "name"),
-        unit = get(row, "unit") || defaultUnit;
-      need(
-        /^[A-Z0-9][A-Z0-9._-]{0,63}$/.test(code),
-        `Invalid SKU at row ${index + 2}; use text SKUs`,
-      );
-      need(!seen.has(code), `Duplicate SKU ${code}`);
-      seen.add(code);
-      need(
-        unit.length <= 30 && (unit !== "PCS" || factor === 1),
-        "Invalid unit/factor; PCS factor is 1",
-      );
-      let quantity = 0;
-      if (input.opening) {
+    const seen = new Map<string, string>();
+    const rows = parsed.rows
+      .map((row, index) => {
+        const code = text(get(row, "code"), `SKU at row ${index + 2}`, 64),
+          name = get(row, "name") ? text(get(row, "name"), "name") : null,
+          unit = get(row, "unit") || defaultUnit;
         need(
-          /^\d+$/.test(get(row, "quantity")),
-          `Invalid opening quantity for ${code}`,
+          /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(code),
+          `Invalid SKU at row ${index + 2}; use text SKUs`,
         );
-        quantity = integer(
-          Number(get(row, "quantity")) * factor,
-          "opening base quantity",
+        const identity = JSON.stringify([name, unit]);
+        need(
+          !seen.has(code) ||
+            (parsed.template !== "MASTER" && seen.get(code) === identity),
+          `Duplicate or conflicting SKU ${code}`,
         );
-      }
-      return { code, name, unit, quantity };
-    });
+        const duplicate = seen.has(code);
+        seen.set(code, identity);
+        need(
+          unit.length <= 30 && (unit !== "PCS" || factor === 1),
+          "Invalid unit/factor; PCS factor is 1",
+        );
+        let quantity = 0;
+        if (input.opening) {
+          need(
+            /^\d+$/.test(get(row, "quantity")),
+            `Invalid opening quantity for ${code}`,
+          );
+          quantity = integer(
+            Number(get(row, "quantity")) * factor,
+            "opening base quantity",
+          );
+        }
+        return duplicate ? null : { code, name, unit, quantity };
+      })
+      .filter((row) => row !== null);
     need(rows.length > 0, "No product rows");
     return send(
       await command(ctx, "master.import", input, async (tx) => {
@@ -644,9 +861,28 @@ export async function handleWorkspace(ctx: Context) {
           [id, actor.warehouse, parsed.checksum, actor.id, rows.length],
         );
         for (const row of rows) {
+          const existing = (
+            await tx.query("SELECT * FROM products WHERE code=$1 FOR UPDATE", [
+              row.code,
+            ])
+          ).rows[0];
+          need(
+            !existing || existing.active,
+            `SKU ${row.code} is archived; do not overwrite archived history`,
+            409,
+          );
           await tx.query(
             "INSERT INTO products(code,name,uom,uom_factor) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,uom=EXCLUDED.uom,uom_factor=EXCLUDED.uom_factor",
-            [row.code, row.name, row.unit, factor],
+            [
+              row.code,
+              row.name || existing?.name || row.code,
+              parsed.template !== "MASTER" && existing
+                ? existing.uom
+                : row.unit,
+              parsed.template !== "MASTER" && existing
+                ? existing.uom_factor
+                : factor,
+            ],
           );
           await tx.query(
             "INSERT INTO product_batches(product,batch) VALUES($1,'') ON CONFLICT DO NOTHING",

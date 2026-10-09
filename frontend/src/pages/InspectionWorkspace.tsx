@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type AuthSession } from "../services/api";
-import { Camera, Boxes, LogOut, Search, ShieldCheck } from "lucide-react";
+import { Camera, Boxes, Search, ShieldCheck } from "lucide-react";
 import "../inspection.css";
+import {
+  ConnectedLayout,
+  type ConnectedPage,
+} from "../layouts/ConnectedLayout";
+import { ReferencePhoto, ExportComposer } from "./InspectionTools";
 type Product = { code: string; name: string; uom: string; uom_factor: number };
 type Catalog = {
   products: Product[];
@@ -35,16 +40,26 @@ const empty: Catalog = {
   batches: [],
   balances: [],
 };
-export function InspectionWorkspace() {
-  const [session, setSession] = useState<AuthSession | null>(null),
-    [boot, setBoot] = useState(true),
-    [warehouse, setWarehouse] = useState(""),
+export function InspectionWorkspace({
+  initialSession = null,
+  initialBoot = true,
+  initialTab = "inspect",
+}: {
+  initialSession?: AuthSession | null;
+  initialBoot?: boolean;
+  initialTab?: string;
+} = {}) {
+  const [session, setSession] = useState<AuthSession | null>(initialSession),
+    [boot, setBoot] = useState(initialBoot),
+    [warehouse, setWarehouse] = useState(
+      initialSession?.memberships[0]?.warehouse || "",
+    ),
     [catalog, setCatalog] = useState<Catalog>(empty),
     [inspections, setInspections] = useState<Inspection[]>([]),
     [users, setUsers] = useState<
       { id: string; username: string; role: string }[]
     >([]);
-  const [tab, setTab] = useState("inspect"),
+  const [tab, setTab] = useState(initialTab),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -86,6 +101,7 @@ export function InspectionWorkspace() {
       headers: string[];
       rows: string[][];
       rowCount: number;
+      template: string;
     } | null>(null),
     [mapping, setMapping] = useState({
       code: "",
@@ -205,805 +221,889 @@ export function InspectionWorkspace() {
     );
   if (!session)
     return (
-      <main className="inspection-login">
-        <div className="inspection-brand">
-          <Boxes />
-          <span>BUYMORE / WAREHOUSE</span>
-        </div>
-        <h1>
-          Stok akurat.
-          <br />
-          Bukti nyata.
-        </h1>
-        <p>
-          Master BigSeller, inspeksi langsung, dan persetujuan Admin dalam satu
-          workspace.
-        </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            run(async () => {
-              await api("/login", undefined, {
-                username,
-                password,
-              });
-              const s = await api<AuthSession>("/session");
-              setSession(s);
-              setWarehouse(s.memberships[0]?.warehouse || "");
-              setPassword("");
-            });
-          }}
-        >
-          <label>
-            Username
-            <input
-              autoComplete="username"
-              required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          <button disabled={busy}>Masuk workspace</button>
-        </form>
-        {error && <p role="alert">{error}</p>}
-      </main>
-    );
-  return (
-    <div className="inspection-app">
-      <header className="inspection-header">
-        <div className="inspection-brand">
-          <Boxes />
-          <strong>BUYMORE</strong>
-          <span>WAREHOUSE</span>
-        </div>
-        <select
-          aria-label="Gudang"
-          value={warehouse}
-          onChange={(e) => setWarehouse(e.target.value)}
-        >
-          {session.memberships.map((m) => (
-            <option key={m.warehouse}>{m.warehouse}</option>
-          ))}
-        </select>
-        <span>
-          {session.user.username} / {role}
-        </span>
-        <button
-          aria-label="Keluar"
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              await api("/logout", warehouse, {});
-              stopCamera();
-              setSession(null);
-              setCatalog(empty);
-              setInspections([]);
-              setPhotoView("");
-            })
-          }
-        >
-          <LogOut size={18} />
-        </button>
-      </header>
-      <section className="inspection-hero">
-        <div>
-          <p className="inspection-eyebrow">LIVE INVENTORY / {warehouse}</p>
-          <h1>
-            {admin
-              ? "Kendali stok, tanpa kerumitan."
-              : "Periksa barang. Catat yang nyata."}
-          </h1>
-          <p>
-            {admin
-              ? "Kelola master, tim, dan hasil inspeksi dari satu tempat."
-              : "SKU dan nama dikunci. Pilih satuan, isi stok teramati, lalu ambil foto langsung."}
-          </p>
-        </div>
-        <div className="inspection-metric">
-          <strong>{catalog.products.length}</strong>
-          <span>SKU aktif</span>
-        </div>
-      </section>
-      <aside className="inspection-assumption">
-        <ShieldCheck size={18} />
-        <span>
-          Asumsi untuk ditinjau: stok resmi berubah setelah persetujuan Admin.
-          User memilih satuan yang ditetapkan Admin, bukan mengubah konversi.
-        </span>
-      </aside>
-      <nav className="inspection-tabs">
-        {[
-          ["inspect", "Inspeksi stok"],
-          ["history", admin ? "Tinjau inspeksi" : "Riwayat saya"],
-          ...(admin
-            ? [
-                ["master", "Master & impor"],
-                ["users", "Pengguna"],
-              ]
-            : []),
-        ].map(([id, label]) => (
-          <button
-            className={tab === id ? "active" : ""}
-            key={id}
-            onClick={() => {
-              setTab(id);
-              stopCamera();
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-      {error && (
-        <div className="inspection-error" role="alert">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div className="inspection-notice" role="status">
-          {notice}
-        </div>
-      )}
-      {tab === "inspect" && (
-        <section className="inspection-grid">
+      <div className="login-page">
+        <section className="login-story">
+          <div className="brand">
+            <span className="brand-mark">b.</span>
+            <span>
+              buymore<small>WAREHOUSE WORKSPACE</small>
+            </span>
+          </div>
           <div>
-            <div className="inspection-search">
-              <Search size={18} />
-              <input
-                placeholder="Cari SKU atau nama barang"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <div className="inspection-products">
-              {catalog.products
-                .filter((p) =>
-                  `${p.code} ${p.name}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-                )
-                .map((p) => (
-                  <button
-                    className={selected?.code === p.code ? "selected" : ""}
-                    key={p.code}
-                    onClick={() => {
-                      stopCamera();
-                      setSelected(p);
-                      setUnit(p.uom);
-                      setQuantity("");
-                      setBatch(
-                        catalog.batches.find((b) => b.product === p.code)
-                          ?.batch || "",
-                      );
-                      setCapture("");
-                    }}
-                  >
-                    <span className="inspection-sku">{p.code}</span>
-                    <strong>{p.name}</strong>
-                    <span>
-                      {p.uom} / {p.uom_factor} PCS
-                    </span>
-                  </button>
-                ))}
-              {!catalog.products.length && (
-                <p>
-                  Master belum tersedia. Admin dapat mengimpor ekspor master
-                  BigSeller.
-                </p>
-              )}
-            </div>
-          </div>
-          <article className="inspection-card">
-            {selected ? (
-              <>
-                <p className="inspection-eyebrow">INSPEKSI BARANG</p>
-                <h2>{selected.name}</h2>
-                <p>
-                  SKU: <strong>{selected.code}</strong> (hanya baca)
-                </p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    run(async () => {
-                      if (!capture)
-                        throw new Error("Ambil live photo terlebih dahulu.");
-                      const photo =
-                        uploaded.current?.capture === capture &&
-                        uploaded.current.warehouse === warehouse
-                          ? uploaded.current
-                          : await mutate<{ id: string }>("/workspace/photos", {
-                              mime: "image/jpeg",
-                              content: capture.split(",")[1],
-                            });
-                      uploaded.current = { capture, warehouse, id: photo.id };
-                      await mutate("/workspace/inspections", {
-                        product: selected.code,
-                        location,
-                        batch,
-                        quantity: Number(quantity),
-                        unit,
-                        photo: photo.id,
-                      });
-                      setCapture("");
-                      uploaded.current = null;
-                      setQuantity("");
-                      await load();
-                      setNotice(
-                        "Inspeksi terkirim. Menunggu persetujuan Admin.",
-                      );
-                    });
-                  }}
-                >
-                  <label>
-                    Lokasi
-                    <select
-                      required
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                    >
-                      {catalog.locations.map((l) => (
-                        <option key={l.id}>{l.id}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Batch
-                    <select
-                      value={batch}
-                      onChange={(e) => setBatch(e.target.value)}
-                    >
-                      {catalog.batches
-                        .filter((b) => b.product === selected.code)
-                        .map((b) => (
-                          <option key={b.batch} value={b.batch}>
-                            {b.batch || "Tanpa batch"}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <p>
-                    Stok resmi:{" "}
-                    <strong>
-                      {catalog.balances.find(
-                        (b) =>
-                          b.product === selected.code &&
-                          b.location === location &&
-                          b.batch === batch,
-                      )?.quantity || 0}{" "}
-                      PCS
-                    </strong>
-                  </p>
-                  <div className="inspection-fields">
-                    <label>
-                      Stok teramati
-                      <input
-                        required
-                        type="number"
-                        min="0"
-                        max="2147483647"
-                        step="1"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Satuan
-                      <select
-                        value={unit}
-                        onChange={(e) => setUnit(e.target.value)}
-                      >
-                        {[...new Set(["PCS", selected.uom])].map((u) => (
-                          <option key={u}>{u}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="inspection-camera">
-                    {camera && <video ref={video} autoPlay muted playsInline />}
-                    {capture && <img src={capture} alt="Live photo inspeksi" />}
-                    {!camera && !capture && (
-                      <p>
-                        <Camera /> Foto langsung dari kamera, bukan unggahan
-                        galeri.
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => run(startCamera)}
-                    >
-                      {capture ? "Ambil ulang" : "Buka kamera"}
-                    </button>
-                    {camera && (
-                      <button type="button" onClick={takePhoto}>
-                        Ambil foto
-                      </button>
-                    )}
-                  </div>
-                  <button disabled={busy || !capture || !location}>
-                    Kirim untuk persetujuan
-                  </button>
-                </form>
-              </>
-            ) : (
-              <>
-                <Camera size={40} />
-                <h2>Pilih barang untuk mulai</h2>
-                <p>
-                  Semua master tetap hanya-baca untuk User. Perubahan stok
-                  tercatat bersama bukti foto.
-                </p>
-              </>
-            )}
-          </article>
-        </section>
-      )}
-      {tab === "history" && (
-        <section className="inspection-card">
-          <h2>
-            {admin ? "Hasil inspeksi & persetujuan" : "Riwayat inspeksi Anda"}
-          </h2>
-          <button disabled={busy} onClick={() => run(load)}>
-            Muat ulang
-          </button>
-          {admin && (
-            <label>
-              Alasan review
-              <input
-                value={reviewReason}
-                onChange={(e) => setReviewReason(e.target.value)}
-                placeholder="Wajib untuk setujui atau tolak"
-              />
-            </label>
-          )}
-          <div className="inspection-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Barang / lokasi</th>
-                  <th>Teramati</th>
-                  <th>Snapshot</th>
-                  <th>Status</th>
-                  <th>Bukti / tindakan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inspections.map((i) => (
-                  <tr key={i.id}>
-                    <td>
-                      <strong>{i.name}</strong>
-                      <br />
-                      {i.product} / {i.location} {i.batch}
-                      <br />
-                      {i.username}
-                    </td>
-                    <td>
-                      {i.quantity} {i.unit}
-                      <br />
-                      {i.base_quantity} PCS
-                    </td>
-                    <td>{i.snapshot} PCS</td>
-                    <td>
-                      {i.status}
-                      <br />
-                      {i.reason}
-                    </td>
-                    <td>
-                      <button
-                        onClick={() =>
-                          run(async () => {
-                            const p = await api<{
-                              mime: string;
-                              content: string;
-                            }>(`/workspace/photos/${i.photo}`, warehouse);
-                            setPhotoView(`data:${p.mime};base64,${p.content}`);
-                          })
-                        }
-                      >
-                        Lihat foto
-                      </button>
-                      {admin &&
-                        i.status === "PENDING" &&
-                        ["approve", "reject"].map((action) => (
-                          <button
-                            disabled={busy || !reviewReason.trim()}
-                            key={action}
-                            onClick={() =>
-                              run(async () => {
-                                await mutate(
-                                  `/workspace/inspections/${i.id}/${action}`,
-                                  { reason: reviewReason },
-                                );
-                                await load();
-                                setNotice(
-                                  action === "approve"
-                                    ? "Stok resmi diperbarui."
-                                    : "Inspeksi ditolak.",
-                                );
-                              })
-                            }
-                          >
-                            {action === "approve" ? "Setujui" : "Tolak"}
-                          </button>
-                        ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!inspections.length && <p>Belum ada inspeksi.</p>}
-          {photoView && (
-            <div>
-              <button onClick={() => setPhotoView("")}>Tutup foto</button>
-              <img
-                className="inspection-evidence"
-                src={photoView}
-                alt="Bukti foto inspeksi"
-              />
-            </div>
-          )}
-        </section>
-      )}
-      {admin && tab === "users" && (
-        <section className="inspection-grid">
-          <article className="inspection-card">
-            <h2>Tambah pengguna</h2>
+            <span className="eyebrow">RUANG KERJA GUDANG ANDA</span>
+            <h1>
+              Material teratur.
+              <br />
+              Tim terhubung.
+              <br />
+              <em>Kerja lebih tenang.</em>
+            </h1>
             <p>
-              Akses hanya untuk gudang aktif. Username harus baru; akun gudang
-              lain tidak diambil alih.
+              Master BigSeller, inspeksi langsung, dan persetujuan Admin dalam
+              satu workspace.
             </p>
+          </div>
+          <span className="login-story-footer">
+            <Boxes size={18} />
+            Dibangun untuk operasional Buymore.
+          </span>
+        </section>
+        <section className="login-form">
+          <div className="login-inner">
+            <span className="subtle-chip">WAREHOUSE WORKSPACE</span>
+            <h2>Selamat datang kembali.</h2>
+            <p>Masuk dengan akun gudang Anda untuk melanjutkan.</p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 run(async () => {
-                  await mutate("/workspace/users", newUser);
-                  setNewUser({ username: "", password: "", role: "User" });
-                  await load();
-                  setNotice("Pengguna dibuat.");
+                  await api("/login", undefined, {
+                    username,
+                    password,
+                  });
+                  const s = await api<AuthSession>("/session");
+                  setSession(s);
+                  setWarehouse(s.memberships[0]?.warehouse || "");
+                  setPassword("");
                 });
               }}
             >
               <label>
                 Username
                 <input
+                  autoComplete="username"
                   required
-                  value={newUser.username}
-                  onChange={(e) =>
-                    setNewUser({ ...newUser, username: e.target.value })
-                  }
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                 />
               </label>
               <label>
-                Password (minimal 16 karakter)
+                Password
                 <input
-                  required
                   type="password"
-                  minLength={16}
-                  maxLength={256}
-                  autoComplete="new-password"
-                  value={newUser.password}
-                  onChange={(e) =>
-                    setNewUser({ ...newUser, password: e.target.value })
-                  }
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
-              <label>
-                Peran
-                <select
-                  value={newUser.role}
-                  onChange={(e) =>
-                    setNewUser({ ...newUser, role: e.target.value })
-                  }
-                >
-                  <option>User</option>
-                  <option>Admin</option>
-                </select>
-              </label>
-              <button disabled={busy}>Buat pengguna</button>
+              <button disabled={busy}>Masuk workspace</button>
             </form>
-          </article>
-          <article className="inspection-card">
-            <h2>Tim gudang</h2>
-            {users.map((u) => (
-              <p key={u.id}>
-                <strong>{u.username}</strong> / {u.role}
-              </p>
-            ))}
-          </article>
+            {error && <p role="alert">{error}</p>}
+          </div>
         </section>
-      )}
-      {admin && tab === "master" && (
-        <section className="inspection-grid">
-          <article className="inspection-card">
-            <h2>Master barang</h2>
+      </div>
+    );
+  return (
+    <ConnectedLayout
+      inspectionMode
+      session={session}
+      warehouse={warehouse}
+      setWarehouse={setWarehouse}
+      page={
+        (
+          {
+            inspect: "counts",
+            history: "reports",
+            master: "inventory",
+            users: "settings",
+            export: "export",
+          } as Record<string, ConnectedPage>
+        )[tab]
+      }
+      navigate={(page) => {
+        setTab(
+          (
+            {
+              counts: "inspect",
+              reports: "history",
+              inventory: "master",
+              settings: "users",
+              export: "export",
+            } as Record<string, string>
+          )[page],
+        );
+        stopCamera();
+      }}
+      busy={busy}
+      logout={() =>
+        run(async () => {
+          await api("/logout", warehouse, {});
+          stopCamera();
+          setSession(null);
+          setCatalog(empty);
+          setInspections([]);
+          setPhotoView("");
+        })
+      }
+    >
+      <div className="inspection-app inspection-content">
+        <section className="inspection-hero hero-panel">
+          <div className="hero-copy">
+            <p className="inspection-eyebrow">LIVE INVENTORY / {warehouse}</p>
+            <h1>
+              {admin
+                ? "Kendali stok, tanpa kerumitan."
+                : "Periksa barang. Catat yang nyata."}
+            </h1>
             <p>
-              Kode SKU adalah identitas tetap. Konversi yang memiliki riwayat
-              tidak dapat diubah; gunakan SKU baru.
+              {admin
+                ? "Kelola master, tim, dan hasil inspeksi dari satu tempat."
+                : "SKU dan nama dikunci. Pilih satuan, isi stok teramati, lalu ambil foto langsung."}
             </p>
-            <select
-              aria-label="Pilih master untuk diedit"
-              value={edit.code}
-              onChange={(e) => {
-                const p = catalog.products.find(
-                  (p) => p.code === e.target.value,
-                );
-                setEdit(
-                  p
-                    ? {
-                        code: p.code,
-                        name: p.name,
-                        unit: p.uom,
-                        factor: String(p.uom_factor),
-                      }
-                    : { code: "", name: "", unit: "PCS", factor: "1" },
-                );
-              }}
-            >
-              <option value="">Barang baru</option>
-              {catalog.products.map((p) => (
-                <option key={p.code} value={p.code}>
-                  {p.code} / {p.name}
-                </option>
-              ))}
-            </select>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await mutate("/workspace/products", {
-                    ...edit,
-                    factor: Number(edit.factor),
-                  });
-                  await load();
-                  setNotice("Master disimpan.");
-                });
-              }}
-            >
-              <label>
-                SKU
+          </div>
+          <div className="inspection-metric">
+            <strong>{catalog.products.length}</strong>
+            <span>SKU aktif</span>
+          </div>
+        </section>
+        <aside className="inspection-assumption">
+          <ShieldCheck size={18} />
+          <span>
+            Stok resmi berubah setelah persetujuan Admin. User memilih satuan
+            yang ditetapkan Admin, bukan mengubah konversi.
+          </span>
+        </aside>
+        {error && (
+          <div className="inspection-error" role="alert">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="inspection-notice" role="status">
+            {notice}
+          </div>
+        )}
+        {tab === "inspect" && (
+          <section className="inspection-grid">
+            <div>
+              <div className="inspection-search">
+                <Search size={18} />
                 <input
-                  required
-                  value={edit.code}
-                  onChange={(e) => setEdit({ ...edit, code: e.target.value })}
+                  placeholder="Cari SKU atau nama barang"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="inspection-products">
+                {catalog.products
+                  .filter((p) =>
+                    `${p.code} ${p.name}`
+                      .toLowerCase()
+                      .includes(search.toLowerCase()),
+                  )
+                  .map((p) => (
+                    <button
+                      className={selected?.code === p.code ? "selected" : ""}
+                      key={p.code}
+                      onClick={() => {
+                        stopCamera();
+                        setSelected(p);
+                        setUnit(p.uom);
+                        setQuantity("");
+                        setBatch(
+                          catalog.batches.find((b) => b.product === p.code)
+                            ?.batch || "",
+                        );
+                        setCapture("");
+                      }}
+                    >
+                      <span className="inspection-sku">{p.code}</span>
+                      <strong>{p.name}</strong>
+                      <span>
+                        {p.uom} / {p.uom_factor} PCS
+                      </span>
+                    </button>
+                  ))}
+                {!catalog.products.length && (
+                  <p>
+                    Master belum tersedia. Admin dapat mengimpor ekspor master
+                    BigSeller.
+                  </p>
+                )}
+              </div>
+            </div>
+            <article className="inspection-card">
+              {selected ? (
+                <>
+                  <p className="inspection-eyebrow">INSPEKSI BARANG</p>
+                  <h2>{selected.name}</h2>
+                  <ReferencePhoto
+                    product={selected.code}
+                    warehouse={warehouse}
+                  />
+                  <p>
+                    SKU: <strong>{selected.code}</strong> (hanya baca)
+                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      run(async () => {
+                        if (!capture)
+                          throw new Error("Ambil live photo terlebih dahulu.");
+                        const photo =
+                          uploaded.current?.capture === capture &&
+                          uploaded.current.warehouse === warehouse
+                            ? uploaded.current
+                            : await mutate<{ id: string }>(
+                                "/workspace/photos",
+                                {
+                                  mime: "image/jpeg",
+                                  content: capture.split(",")[1],
+                                },
+                              );
+                        uploaded.current = { capture, warehouse, id: photo.id };
+                        await mutate("/workspace/inspections", {
+                          product: selected.code,
+                          location,
+                          batch,
+                          quantity: Number(quantity),
+                          unit,
+                          photo: photo.id,
+                        });
+                        setCapture("");
+                        uploaded.current = null;
+                        setQuantity("");
+                        await load();
+                        setNotice(
+                          "Inspeksi terkirim. Menunggu persetujuan Admin.",
+                        );
+                      });
+                    }}
+                  >
+                    <label>
+                      Lokasi
+                      <select
+                        required
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                      >
+                        {catalog.locations.map((l) => (
+                          <option key={l.id}>{l.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Batch
+                      <select
+                        value={batch}
+                        onChange={(e) => setBatch(e.target.value)}
+                      >
+                        {catalog.batches
+                          .filter((b) => b.product === selected.code)
+                          .map((b) => (
+                            <option key={b.batch} value={b.batch}>
+                              {b.batch || "Tanpa batch"}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <p>
+                      Stok resmi:{" "}
+                      <strong>
+                        {catalog.balances.find(
+                          (b) =>
+                            b.product === selected.code &&
+                            b.location === location &&
+                            b.batch === batch,
+                        )?.quantity || 0}{" "}
+                        PCS
+                      </strong>
+                    </p>
+                    <div className="inspection-fields">
+                      <label>
+                        Stok teramati
+                        <input
+                          required
+                          type="number"
+                          min="0"
+                          max="2147483647"
+                          step="1"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Satuan
+                        <select
+                          value={unit}
+                          onChange={(e) => setUnit(e.target.value)}
+                        >
+                          {[...new Set(["PCS", selected.uom])].map((u) => (
+                            <option key={u}>{u}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="inspection-camera">
+                      {camera && (
+                        <video ref={video} autoPlay muted playsInline />
+                      )}
+                      {capture && (
+                        <img src={capture} alt="Live photo inspeksi" />
+                      )}
+                      {!camera && !capture && (
+                        <p>
+                          <Camera /> Foto langsung dari kamera, bukan unggahan
+                          galeri.
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => run(startCamera)}
+                      >
+                        {capture ? "Ambil ulang" : "Buka kamera"}
+                      </button>
+                      {camera && (
+                        <button type="button" onClick={takePhoto}>
+                          Ambil foto
+                        </button>
+                      )}
+                    </div>
+                    <button disabled={busy || !capture || !location}>
+                      Kirim untuk persetujuan
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <Camera size={40} />
+                  <h2>Pilih barang untuk mulai</h2>
+                  <p>
+                    Semua master tetap hanya-baca untuk User. Perubahan stok
+                    tercatat bersama bukti foto.
+                  </p>
+                </>
+              )}
+            </article>
+          </section>
+        )}
+        {tab === "history" && (
+          <section className="inspection-card">
+            <h2>
+              {admin ? "Hasil inspeksi & persetujuan" : "Riwayat inspeksi Anda"}
+            </h2>
+            <button disabled={busy} onClick={() => run(load)}>
+              Muat ulang
+            </button>
+            {admin && (
+              <label>
+                Alasan review
+                <input
+                  value={reviewReason}
+                  onChange={(e) => setReviewReason(e.target.value)}
+                  placeholder="Wajib untuk setujui atau tolak"
                 />
               </label>
-              <label>
-                Nama
-                <input
-                  required
-                  value={edit.name}
-                  onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+            )}
+            <div className="inspection-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Barang / lokasi</th>
+                    <th>Teramati</th>
+                    <th>Snapshot</th>
+                    <th>Status</th>
+                    <th>Bukti / tindakan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspections.map((i) => (
+                    <tr key={i.id}>
+                      <td>
+                        <strong>{i.name}</strong>
+                        <br />
+                        {i.product} / {i.location} {i.batch}
+                        <br />
+                        {i.username}
+                      </td>
+                      <td>
+                        {i.quantity} {i.unit}
+                        <br />
+                        {i.base_quantity} PCS
+                      </td>
+                      <td>{i.snapshot} PCS</td>
+                      <td>
+                        {i.status}
+                        <br />
+                        {i.reason}
+                      </td>
+                      <td>
+                        <button
+                          onClick={() =>
+                            run(async () => {
+                              const p = await api<{
+                                mime: string;
+                                content: string;
+                              }>(`/workspace/photos/${i.photo}`, warehouse);
+                              setPhotoView(
+                                `data:${p.mime};base64,${p.content}`,
+                              );
+                            })
+                          }
+                        >
+                          Lihat foto
+                        </button>
+                        {admin &&
+                          i.status === "PENDING" &&
+                          ["approve", "reject"].map((action) => (
+                            <button
+                              disabled={busy || !reviewReason.trim()}
+                              key={action}
+                              onClick={() =>
+                                run(async () => {
+                                  await mutate(
+                                    `/workspace/inspections/${i.id}/${action}`,
+                                    { reason: reviewReason },
+                                  );
+                                  await load();
+                                  setNotice(
+                                    action === "approve"
+                                      ? "Stok resmi diperbarui."
+                                      : "Inspeksi ditolak.",
+                                  );
+                                })
+                              }
+                            >
+                              {action === "approve" ? "Setujui" : "Tolak"}
+                            </button>
+                          ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!inspections.length && <p>Belum ada inspeksi.</p>}
+            {photoView && (
+              <div>
+                <button onClick={() => setPhotoView("")}>Tutup foto</button>
+                <img
+                  className="inspection-evidence"
+                  src={photoView}
+                  alt="Bukti foto inspeksi"
                 />
-              </label>
-              <label>
-                Satuan
-                <input
-                  required
-                  value={edit.unit}
-                  onChange={(e) => setEdit({ ...edit, unit: e.target.value })}
-                />
-              </label>
-              <label>
-                PCS per satuan
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={edit.factor}
-                  onChange={(e) => setEdit({ ...edit, factor: e.target.value })}
-                />
-              </label>
-              <button disabled={busy}>Simpan master</button>
-            </form>
-            <h3>Lokasi gudang</h3>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await mutate("/workspace/locations", {
-                    location: newLocation,
-                  });
-                  setNewLocation("");
-                  await load();
-                });
-              }}
-            >
-              <label>
-                Lokasi baru
-                <input
-                  required
-                  value={newLocation}
-                  onChange={(e) => setNewLocation(e.target.value)}
-                />
-              </label>
-              <button disabled={busy}>Tambah lokasi</button>
-            </form>
-          </article>
-          <article className="inspection-card">
-            <h2>Impor awal BigSeller</h2>
-            <p>
-              Gunakan ekspor master produk, bukan template PO/SR. Maksimal 2 MB
-              / 2.000 baris. Sampel master resmi belum tersedia; periksa
-              pemetaan dan pratinjau sebelum impor.
-            </p>
-            <label>
-              File XLSX / CSV
-              <input
-                type="file"
-                accept=".xlsx,.csv"
-                disabled={busy}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  setPreview(null);
-                  setFile(null);
-                  if (!f) return;
-                  run(async () => {
-                    if (f.size > 2097152) throw new Error("Maksimal 2 MB");
-                    const content = await new Promise<string>(
-                      (resolve, reject) => {
-                        const r = new FileReader();
-                        r.onload = () =>
-                          resolve(String(r.result).split(",")[1]);
-                        r.onerror = reject;
-                        r.readAsDataURL(f);
-                      },
-                    );
-                    const next = {
-                      content,
-                      format: f.name.toLowerCase().endsWith(".csv")
-                        ? "csv"
-                        : "xlsx",
-                    };
-                    const p = await api<{
-                      headers: string[];
-                      rows: string[][];
-                      rowCount: number;
-                    }>("/workspace/import/preview", warehouse, next);
-                    setFile(next);
-                    setPreview(p);
-                    setMapping({ code: "", name: "", unit: "", quantity: "" });
-                  });
-                }}
-              />
-            </label>
-            {preview && (
+              </div>
+            )}
+          </section>
+        )}
+        {admin && tab === "export" && (
+          <ExportComposer products={catalog.products} warehouse={warehouse} />
+        )}
+        {admin && tab === "users" && (
+          <section className="inspection-grid">
+            <article className="inspection-card">
+              <h2>Tambah pengguna</h2>
+              <p>
+                Akses hanya untuk gudang aktif. Username harus baru; akun gudang
+                lain tidak diambil alih.
+              </p>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   run(async () => {
-                    await mutate("/workspace/import", {
-                      ...file,
-                      mapping,
-                      defaultUnit,
-                      defaultFactor: Number(defaultFactor),
-                      opening,
-                      location,
-                    });
-                    setPreview(null);
-                    setFile(null);
+                    await mutate("/workspace/users", newUser);
+                    setNewUser({ username: "", password: "", role: "User" });
                     await load();
-                    setNotice(
-                      "Impor berhasil, seluruh baris tersimpan secara atomik.",
-                    );
+                    setNotice("Pengguna dibuat.");
                   });
                 }}
               >
-                <p>{preview.rowCount} baris / pratinjau 10 baris pertama</p>
-                {(
-                  [
-                    ["code", "Kolom SKU"],
-                    ["name", "Kolom nama"],
-                    ["unit", "Kolom satuan (opsional)"],
-                    ["quantity", "Kolom stok awal"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <label key={key}>
-                    {label}
-                    <select
-                      required={
-                        key === "code" ||
-                        key === "name" ||
-                        (key === "quantity" && opening)
-                      }
-                      value={mapping[key]}
-                      onChange={(e) =>
-                        setMapping({ ...mapping, [key]: e.target.value })
-                      }
-                    >
-                      <option value="">Pilih kolom</option>
-                      {preview.headers.filter(Boolean).map((h) => (
-                        <option key={h}>{h}</option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
                 <label>
-                  Satuan default
+                  Username
                   <input
                     required
-                    value={defaultUnit}
-                    onChange={(e) => setDefaultUnit(e.target.value)}
+                    value={newUser.username}
+                    onChange={(e) =>
+                      setNewUser({ ...newUser, username: e.target.value })
+                    }
                   />
                 </label>
                 <label>
-                  PCS per satuan (berlaku untuk semua baris)
+                  Password (minimal 16 karakter)
+                  <input
+                    required
+                    type="password"
+                    minLength={16}
+                    maxLength={256}
+                    autoComplete="new-password"
+                    value={newUser.password}
+                    onChange={(e) =>
+                      setNewUser({ ...newUser, password: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Peran
+                  <select
+                    value={newUser.role}
+                    onChange={(e) =>
+                      setNewUser({ ...newUser, role: e.target.value })
+                    }
+                  >
+                    <option>User</option>
+                    <option>Admin</option>
+                  </select>
+                </label>
+                <button disabled={busy}>Buat pengguna</button>
+              </form>
+            </article>
+            <article className="inspection-card">
+              <h2>Tim gudang</h2>
+              {users.map((u) => (
+                <p key={u.id}>
+                  <strong>{u.username}</strong> / {u.role}
+                </p>
+              ))}
+            </article>
+          </section>
+        )}
+        {admin && tab === "master" && (
+          <section className="inspection-grid">
+            <article className="inspection-card">
+              <h2>Master barang</h2>
+              <p>
+                Kode SKU adalah identitas tetap. Konversi yang memiliki riwayat
+                tidak dapat diubah; gunakan SKU baru.
+              </p>
+              <select
+                aria-label="Pilih master untuk diedit"
+                value={edit.code}
+                onChange={(e) => {
+                  const p = catalog.products.find(
+                    (p) => p.code === e.target.value,
+                  );
+                  setEdit(
+                    p
+                      ? {
+                          code: p.code,
+                          name: p.name,
+                          unit: p.uom,
+                          factor: String(p.uom_factor),
+                        }
+                      : { code: "", name: "", unit: "PCS", factor: "1" },
+                  );
+                }}
+              >
+                <option value="">Barang baru</option>
+                {catalog.products.map((p) => (
+                  <option key={p.code} value={p.code}>
+                    {p.code} / {p.name}
+                  </option>
+                ))}
+              </select>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  run(async () => {
+                    await mutate("/workspace/products", {
+                      ...edit,
+                      factor: Number(edit.factor),
+                    });
+                    await load();
+                    setNotice("Master disimpan.");
+                  });
+                }}
+              >
+                <label>
+                  SKU
+                  <input
+                    required
+                    value={edit.code}
+                    onChange={(e) => setEdit({ ...edit, code: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Nama
+                  <input
+                    required
+                    value={edit.name}
+                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Satuan
+                  <input
+                    required
+                    value={edit.unit}
+                    onChange={(e) => setEdit({ ...edit, unit: e.target.value })}
+                  />
+                </label>
+                <label>
+                  PCS per satuan
                   <input
                     required
                     type="number"
                     min="1"
                     step="1"
-                    value={defaultFactor}
-                    onChange={(e) => setDefaultFactor(e.target.value)}
+                    value={edit.factor}
+                    onChange={(e) =>
+                      setEdit({ ...edit, factor: e.target.value })
+                    }
                   />
                 </label>
-                <label className="inspection-check">
+                <button disabled={busy}>Simpan master</button>
+              </form>
+              {catalog.products.some((p) => p.code === edit.code) && (
+                <>
+                  <ReferencePhoto
+                    key={warehouse + edit.code}
+                    product={edit.code}
+                    warehouse={warehouse}
+                    admin
+                  />
+                  <p>
+                    Hapus SKU mengarsipkan katalog global semua gudang, tanpa
+                    menghapus riwayat. Stok harus nol dan tidak ada pekerjaan
+                    tertunda.
+                  </p>
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        if (
+                          !window.confirm(
+                            "Arsipkan SKU di semua gudang? Riwayat tetap tersimpan.",
+                          )
+                        )
+                          return;
+                        await mutate("/workspace/products/archive", {
+                          product: edit.code,
+                        });
+                        setEdit({
+                          code: "",
+                          name: "",
+                          unit: "PCS",
+                          factor: "1",
+                        });
+                        setSelected(null);
+                        await load();
+                        setNotice("SKU diarsipkan.");
+                      })
+                    }
+                  >
+                    Hapus SKU
+                  </button>
+                </>
+              )}
+              <h3>Lokasi gudang</h3>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  run(async () => {
+                    await mutate("/workspace/locations", {
+                      location: newLocation,
+                    });
+                    setNewLocation("");
+                    await load();
+                  });
+                }}
+              >
+                <label>
+                  Lokasi baru
                   <input
-                    type="checkbox"
-                    checked={opening}
-                    onChange={(e) => setOpening(e.target.checked)}
-                  />{" "}
-                  Impor stok awal juga (hanya SKU tanpa mutasi sebelumnya)
+                    required
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                  />
                 </label>
-                {opening && (
-                  <label>
-                    Lokasi stok awal
-                    <select
-                      required
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                    >
-                      <option value="">Pilih lokasi</option>
-                      {catalog.locations.map((l) => (
-                        <option key={l.id}>{l.id}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <div className="inspection-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        {preview.headers.map((h, i) => (
-                          <th key={i}>{h}</th>
+                <button disabled={busy}>Tambah lokasi</button>
+              </form>
+            </article>
+            <article className="inspection-card">
+              <h2>Impor awal BigSeller</h2>
+              <p>
+                Gunakan master produk atau template resmi PO / SR berisi SKU.
+                Maksimal 2 MB / 2.000 baris. PO / SR hanya mengimpor master,
+                bukan jumlah transaksi. Nama kosong memakai nama lama atau kode
+                SKU sementara; edit nama setelah impor. Huruf dan nol awal SKU
+                dipertahankan. Hapus baris contoh template sebelum mengimpor.
+              </p>
+              <label>
+                File XLSX / CSV
+                <input
+                  type="file"
+                  accept=".xlsx,.csv"
+                  disabled={busy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    setPreview(null);
+                    setFile(null);
+                    if (!f) return;
+                    run(async () => {
+                      if (f.size > 2097152) throw new Error("Maksimal 2 MB");
+                      const content = await new Promise<string>(
+                        (resolve, reject) => {
+                          const r = new FileReader();
+                          r.onload = () =>
+                            resolve(String(r.result).split(",")[1]);
+                          r.onerror = reject;
+                          r.readAsDataURL(f);
+                        },
+                      );
+                      const next = {
+                        content,
+                        format: f.name.toLowerCase().endsWith(".csv")
+                          ? "csv"
+                          : "xlsx",
+                      };
+                      const p = await api<{
+                        headers: string[];
+                        rows: string[][];
+                        rowCount: number;
+                        template: string;
+                      }>("/workspace/import/preview", warehouse, next);
+                      setFile(next);
+                      setPreview(p);
+                      setOpening(false);
+                      setMapping({
+                        code:
+                          p.template === "PO"
+                            ? p.headers[1]
+                            : p.template === "SR"
+                              ? p.headers[0]
+                              : "",
+                        name: "",
+                        unit: "",
+                        quantity: "",
+                      });
+                    });
+                  }}
+                />
+              </label>
+              {preview && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    run(async () => {
+                      await mutate("/workspace/import", {
+                        ...file,
+                        mapping,
+                        defaultUnit,
+                        defaultFactor: Number(defaultFactor),
+                        opening,
+                        location,
+                      });
+                      setPreview(null);
+                      setFile(null);
+                      await load();
+                      setNotice(
+                        "Impor berhasil, seluruh baris tersimpan secara atomik.",
+                      );
+                    });
+                  }}
+                >
+                  <p>
+                    Format {preview.template}: {preview.rowCount} baris /
+                    pratinjau 10 baris pertama. SKU berulang identik pada PO /
+                    SR digabung sebagai satu master, tanpa menjumlah stok.
+                  </p>
+                  {(
+                    [
+                      ["code", "Kolom SKU"],
+                      ["name", "Kolom nama"],
+                      ["unit", "Kolom satuan (opsional)"],
+                      ["quantity", "Kolom stok awal"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key}>
+                      {label}
+                      <select
+                        required={
+                          key === "code" ||
+                          (key === "name" && preview.template === "MASTER") ||
+                          (key === "quantity" && opening)
+                        }
+                        value={mapping[key]}
+                        onChange={(e) =>
+                          setMapping({ ...mapping, [key]: e.target.value })
+                        }
+                      >
+                        <option value="">Pilih kolom</option>
+                        {preview.headers.filter(Boolean).map((h) => (
+                          <option key={h}>{h}</option>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.rows.map((r, i) => (
-                        <tr key={i}>
-                          {r.map((v, j) => (
-                            <td key={j}>{v}</td>
+                      </select>
+                    </label>
+                  ))}
+                  <label>
+                    Satuan default
+                    <input
+                      required
+                      value={defaultUnit}
+                      onChange={(e) => setDefaultUnit(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    PCS per satuan (berlaku untuk semua baris)
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={defaultFactor}
+                      onChange={(e) => setDefaultFactor(e.target.value)}
+                    />
+                  </label>
+                  <label className="inspection-check">
+                    <input
+                      type="checkbox"
+                      disabled={preview.template !== "MASTER"}
+                      checked={opening}
+                      onChange={(e) => setOpening(e.target.checked)}
+                    />{" "}
+                    Impor stok awal juga (hanya SKU tanpa mutasi sebelumnya)
+                  </label>
+                  {opening && (
+                    <label>
+                      Lokasi stok awal
+                      <select
+                        required
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                      >
+                        <option value="">Pilih lokasi</option>
+                        {catalog.locations.map((l) => (
+                          <option key={l.id}>{l.id}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <div className="inspection-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          {preview.headers.map((h, i) => (
+                            <th key={i}>{h}</th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button disabled={busy}>
-                  Konfirmasi impor{" "}
-                  {opening ? "master + stok awal" : "master saja"}
-                </button>
-              </form>
-            )}
-          </article>
-        </section>
-      )}
-      <footer className="inspection-footer">
-        BUYMORE / SKU dan riwayat stok tetap terlacak. Foto tersimpan privat,
-        bukan tautan publik.
-      </footer>
-    </div>
+                      </thead>
+                      <tbody>
+                        {preview.rows.map((r, i) => (
+                          <tr key={i}>
+                            {r.map((v, j) => (
+                              <td key={j}>{v}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button disabled={busy}>
+                    Konfirmasi impor{" "}
+                    {opening ? "master + stok awal" : "master saja"}
+                  </button>
+                </form>
+              )}
+            </article>
+          </section>
+        )}
+        <footer className="inspection-footer">
+          BUYMORE / SKU dan riwayat stok tetap terlacak. Foto tersimpan privat,
+          bukan tautan publik.
+        </footer>
+      </div>
+    </ConnectedLayout>
   );
 }

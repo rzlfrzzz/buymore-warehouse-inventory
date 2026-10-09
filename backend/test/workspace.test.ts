@@ -299,6 +299,273 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       ).status,
       200,
     );
+    const png = {
+      mime: "image/png",
+      content:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=",
+    };
+    assert.equal(
+      (
+        await request("/workspace/reference-photos", uc, {
+          product: "000123",
+          ...png,
+        })
+      ).status,
+      403,
+    );
+    const photoKey = randomUUID();
+    assert.equal(
+      (
+        await request(
+          "/workspace/reference-photos",
+          ac,
+          { product: "000123", ...png },
+          photoKey,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(
+          "/workspace/reference-photos",
+          ac,
+          { product: "000123", ...png },
+          photoKey,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await request("/workspace/reference-photos/000123", uc)).body.content,
+      png.content,
+    );
+    assert.equal(
+      (
+        await request(
+          "/workspace/reference-photos/000123",
+          uc,
+          undefined,
+          randomUUID(),
+          "X",
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request("/workspace/reference-photos", ac, {
+          product: "000123",
+          remove: true,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await request("/workspace/reference-photos/000123", uc)).body,
+      null,
+    );
+    assert.equal(
+      (await request("/workspace/products/archive", uc, { product: "000124" }))
+        .status,
+      403,
+    );
+    assert.equal(
+      (await request("/workspace/products/archive", ac, { product: "000123" }))
+        .status,
+      409,
+    );
+    await db.transaction(async (tx) => {
+      await tx.query(
+        "INSERT INTO inventory_ledger(id,warehouse,location,product,batch,delta,actor) VALUES($1,'X','A','000124','',2,$2)",
+        [randomUUID(), admin],
+      );
+    });
+    assert.equal(
+      (await request("/workspace/products/archive", ac, { product: "000124" }))
+        .status,
+      409,
+    );
+    await db.transaction(async (tx) => {
+      await tx.query(
+        "INSERT INTO inventory_ledger(id,warehouse,location,product,batch,delta,actor) VALUES($1,'X','A','000124','',-2,$2)",
+        [randomUUID(), admin],
+      );
+    });
+    const pendingPhoto = await request("/workspace/photos", uc, png);
+    const pendingInspection = await request("/workspace/inspections", uc, {
+      product: "000124",
+      location: "A",
+      batch: "",
+      quantity: 0,
+      unit: "BOX",
+      photo: pendingPhoto.body.id,
+    });
+    assert.equal(pendingInspection.status, 201);
+    assert.equal(
+      (await request("/workspace/products/archive", ac, { product: "000124" }))
+        .status,
+      409,
+    );
+    assert.equal(
+      (
+        await request(
+          `/workspace/inspections/${pendingInspection.body.id}/reject`,
+          ac,
+          { reason: "Retiring SKU" },
+        )
+      ).status,
+      200,
+    );
+    const archiveKey = randomUUID();
+    assert.equal(
+      (
+        await request(
+          "/workspace/products/archive",
+          ac,
+          { product: "000124" },
+          archiveKey,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(
+          "/workspace/products/archive",
+          ac,
+          { product: "000124" },
+          archiveKey,
+        )
+      ).status,
+      200,
+    );
+    assert(
+      !(await request("/workspace/catalog", uc)).body.products.some(
+        (p: any) => p.code === "000124",
+      ),
+    );
+    assert.equal(
+      (
+        await db.transaction((tx) =>
+          tx.query("SELECT * FROM inventory_ledger WHERE product='000124'"),
+        )
+      ).rows.length,
+      2,
+    );
+    await assert.rejects(
+      db.transaction((tx) =>
+        tx.query(
+          "INSERT INTO inventory_ledger(id,warehouse,location,product,batch,delta,actor) VALUES($1,'X','A','000124','',1,$2)",
+          [randomUUID(), admin],
+        ),
+      ),
+      /archived/,
+    );
+    const { loadTemplate } = await import("../src/bigseller.js");
+    for (const type of ["PO", "SR"] as const) {
+      const { workbook, sheet } = await loadTemplate(type);
+      for (let r = 2; r <= sheet.rowCount; r++)
+        sheet.getRow(r).eachCell({ includeEmpty: true }, (c) => {
+          c.value = null;
+        });
+      const col = type === "PO" ? 2 : 1;
+      sheet.getCell(2, col).value = "000019";
+      sheet.getCell(2, col + 1).value = 800;
+      sheet.getCell(3, col).value = "abcde";
+      sheet.getCell(3, col + 1).value = 100;
+      sheet.getCell(4, col).value = "abcde";
+      sheet.getCell(4, col + 1).value = 200;
+      const file = {
+        format: "xlsx",
+        content: Buffer.from(await workbook.xlsx.writeBuffer()).toString(
+          "base64",
+        ),
+      };
+      const p = await request("/workspace/import/preview", ac, file);
+      assert.equal(p.body.template, type);
+      const imp = {
+        ...file,
+        mapping: {
+          code: sheet.getCell(1, col).text,
+          name: "",
+          unit: "",
+          quantity: "",
+        },
+        defaultUnit: "PCS",
+        defaultFactor: 1,
+        opening: false,
+        location: "A",
+      };
+      assert.equal(
+        (await request("/workspace/import", ac, { ...imp, opening: true }))
+          .status,
+        400,
+      );
+      const imported = await request("/workspace/import", ac, imp);
+      assert.equal(imported.status, 201, JSON.stringify(imported.body));
+      assert.equal(imported.body.rows, 2);
+      const data = (await request("/workspace/catalog", uc)).body;
+      assert.equal(
+        data.products.find((p: any) => p.code === "abcde").name,
+        "abcde",
+      );
+      assert(!data.balances.some((b: any) => b.product === "abcde"));
+      const payload = {
+        type,
+        supplier: "Supplier",
+        reference: "PO-001",
+        confirmed: true,
+        lines: [
+          { product: "000019", quantity: 4 },
+          { product: "abcde", quantity: 2 },
+        ],
+      };
+      assert.equal(
+        (await request("/workspace/export", uc, payload)).status,
+        403,
+      );
+      assert.equal(
+        (
+          await request("/workspace/export", ac, {
+            ...payload,
+            confirmed: false,
+          })
+        ).status,
+        400,
+      );
+      const exportKey = randomUUID();
+      const output = await request("/workspace/export", ac, payload, exportKey);
+      assert.equal(output.status, 200, JSON.stringify(output.body));
+      assert.deepEqual(
+        (await request("/workspace/export", ac, payload, exportKey)).body,
+        output.body,
+      );
+      const exported = new ExcelJS.Workbook();
+      await exported.xlsx.load(
+        Buffer.from(output.body.content, "base64") as any,
+      );
+      const out = exported.getWorksheet("SKU")!;
+      assert.equal(out.getRow(1).cellCount, type === "PO" ? 51 : 3);
+      assert.equal(out.getCell(2, col).value, "000019");
+      assert.equal(out.getCell(2, col + 1).value, 4);
+      assert.equal(exported.model.media?.length || 0, 0);
+      assert(
+        !out
+          .getRow(1)
+          .values.toString()
+          .match(/photo|foto/i),
+      );
+      const blank = await request("/workspace/export", ac, {
+        type,
+        blank: true,
+      });
+      assert.equal(blank.status, 200);
+      await exported.xlsx.load(
+        Buffer.from(blank.body.content, "base64") as any,
+      );
+      assert.equal(exported.getWorksheet("SKU")!.getCell(2, col).value, null);
+    }
     const audit = await db.transaction((tx) =>
       tx.query(
         "SELECT payload::text AS data FROM audit_events WHERE action='user.create'",
@@ -320,7 +587,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
     await db.close();
   }
 });
-test("synthetic XLSX preserves text SKUs; formulas and PO templates rejected", async () => {
+test("synthetic XLSX preserves text SKUs and rejects formulas", async () => {
   const workbook = new ExcelJS.Workbook(),
     sheet = workbook.addWorksheet("Master");
   sheet.addRow(["SKU", "Name"]);
@@ -341,15 +608,6 @@ test("synthetic XLSX preserves text SKUs; formulas and PO templates rejected", a
       ),
     }),
     /Formula/,
-  );
-  await assert.rejects(
-    parseMaster({
-      format: "csv",
-      content: Buffer.from("SKU,Supplier,Purchase Quantity\n1,S,3").toString(
-        "base64",
-      ),
-    }),
-    /transaction template/,
   );
 });
 
@@ -415,7 +673,7 @@ test("migration maps legacy roles without altering inventory and expires session
     await engine.close();
   }
 });
-test("supplied PO/SR files are explicitly rejected as master exports", async () => {
+test("supplied PO/SR files are detected as master-only sources", async () => {
   const { readFile } = await import("node:fs/promises");
   for (const name of [
     "impor_daftar_pengurangan_stok_in.xlsx",
@@ -426,9 +684,18 @@ test("supplied PO/SR files are explicitly rejected as master exports", async () 
         new URL("../../bigseller-format-ekspor-impor/" + name, import.meta.url),
       )
     ).toString("base64");
-    await assert.rejects(
-      parseMaster({ content, format: "xlsx" }),
-      /transaction template/,
-    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(content, "base64") as any);
+    const hasRows = workbook.worksheets[0]
+      .getRows(2, Math.max(1, workbook.worksheets[0].rowCount - 1))
+      ?.some((row) => row.hasValues);
+    if (hasRows) {
+      const parsed = await parseMaster({ content, format: "xlsx" });
+      assert.equal(parsed.template, name.includes("pembelian") ? "PO" : "SR");
+    } else
+      await assert.rejects(
+        parseMaster({ content, format: "xlsx" }),
+        /No product rows/,
+      );
   }
 });
