@@ -253,6 +253,22 @@ export async function createApi(
           .map((v) => v.trim())
           .find((v) => v.startsWith(`${cookieName}=`))
           ?.slice(cookieName.length + 1) || "";
+      // Logout remains safe and idempotent after idle expiry or cookie removal.
+      // The origin check above still applies before revoking any session.
+      if (method === "POST" && path === "/api/logout") {
+        if (/^[a-f0-9]{64}$/.test(token)) {
+          const revoked = await db.transaction((tx) =>
+            tx.query(
+              "DELETE FROM sessions WHERE token_hash=$1 RETURNING user_id",
+              [tokenHash(token)],
+            ),
+          );
+          actorId = revoked.rows[0]?.user_id ?? null;
+        }
+        await security("logout", 200);
+        res.setHeader("Set-Cookie", cookie("", 0));
+        return send(res, 200, { ok: true });
+      }
       requireValue(
         /^[a-f0-9]{64}$/.test(token),
         401,
@@ -279,16 +295,6 @@ export async function createApi(
           tx.query("DELETE FROM sessions WHERE user_id=$1", [user.id]),
         );
         await security("logout_all", 200);
-        res.setHeader("Set-Cookie", cookie("", 0));
-        return send(res, 200, { ok: true });
-      }
-      if (method === "POST" && path === "/api/logout") {
-        await security("logout", 200);
-        await db.transaction((tx) =>
-          tx.query("DELETE FROM sessions WHERE token_hash=$1", [
-            tokenHash(token),
-          ]),
-        );
         res.setHeader("Set-Cookie", cookie("", 0));
         return send(res, 200, { ok: true });
       }

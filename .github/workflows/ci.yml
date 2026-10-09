@@ -20,5 +20,9 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      - if: matrix.package == 'frontend'
+        run: npm ci --prefix ../backend
+      - if: matrix.package == 'frontend'
+        run: npm run test:integration
       - run: npm run build
       - run: npm audit --audit-level=high

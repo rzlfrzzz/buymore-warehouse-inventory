@@ -123,27 +123,68 @@ export function InspectionWorkspace({
     setCamera(false);
   }
   useEffect(() => {
-    api<AuthSession>("/session")
-      .then((s) => {
-        setSession(s);
-        setWarehouse(s.memberships[0]?.warehouse || "");
-      })
-      .catch(() => {})
-      .finally(() => setBoot(false));
-    return () => stream.current?.getTracks().forEach((t) => t.stop());
+    let active = true;
+    if (initialBoot)
+      api<AuthSession>("/session")
+        .then((s) => {
+          if (!active) return;
+          setSession(s);
+          setWarehouse(s.memberships[0]?.warehouse || "");
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (active) setBoot(false);
+        });
+    return () => {
+      active = false;
+      stream.current?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
+  const loadVersion = useRef(0);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
   async function load() {
-    if (!warehouse) return;
-    const [c, i] = await Promise.all([
-      api<Catalog>("/workspace/catalog", warehouse),
-      api<Inspection[]>("/workspace/inspections", warehouse),
+    if (!session || !warehouse) return;
+    const version = ++loadVersion.current;
+    const current = () => version === loadVersion.current;
+    setLoadingCatalog(true);
+    // Independent resources must not hide a successfully loaded master list.
+    await Promise.all([
+      api<Catalog>("/workspace/catalog", warehouse)
+        .then((c) => {
+          if (!current()) return;
+          setCatalog(c);
+          setLocation((l) =>
+            c.locations.some((x) => x.id === l) ? l : c.locations[0]?.id || "",
+          );
+        })
+        .catch((e) => {
+          if (current()) setError(`Master: ${e.message}`);
+        })
+        .finally(() => {
+          if (current()) setLoadingCatalog(false);
+        }),
+      api<Inspection[]>("/workspace/inspections", warehouse)
+        .then((i) => {
+          if (current()) setInspections(i);
+        })
+        .catch((e) => {
+          if (current()) setError(`Riwayat: ${e.message}`);
+        }),
+      ...(admin
+        ? [
+            api<{ id: string; username: string; role: string }[]>(
+              "/workspace/users",
+              warehouse,
+            )
+              .then((u) => {
+                if (current()) setUsers(u);
+              })
+              .catch((e) => {
+                if (current()) setError(`Pengguna: ${e.message}`);
+              }),
+          ]
+        : []),
     ]);
-    setCatalog(c);
-    setInspections(i);
-    setLocation((l) =>
-      c.locations.some((x) => x.id === l) ? l : c.locations[0]?.id || "",
-    );
-    if (admin) setUsers(await api("/workspace/users", warehouse));
   }
   useEffect(() => {
     setSelected(null);
@@ -152,9 +193,32 @@ export function InspectionWorkspace({
     setCatalog(empty);
     setInspections([]);
     setUsers([]);
+    setSearch("");
+    setLocation("");
+    setBatch("");
+    setQuantity("");
+    setUnit("PCS");
+    setEdit({ code: "", name: "", unit: "PCS", factor: "1" });
+    setFile(null);
+    setPreview(null);
+    setMapping({ code: "", name: "", unit: "", quantity: "" });
+    setOpening(false);
+    setDefaultUnit("PCS");
+    setDefaultFactor("1");
+    setNewLocation("");
+    setNewUser({ username: "", password: "", role: "User" });
+    setReviewReason("");
+    setError("");
+    setNotice("");
+    uploaded.current = null;
+    pending.current.clear();
     setTab("inspect");
     stopCamera();
-    if (session && warehouse) load().catch((e) => setError(e.message));
+    if (session && warehouse) void load();
+    else setLoadingCatalog(false);
+    return () => {
+      ++loadVersion.current;
+    };
   }, [warehouse, session]);
   useEffect(() => {
     if (camera && video.current && stream.current) {
@@ -188,6 +252,19 @@ export function InspectionWorkspace({
     const result = await api<T>(path, warehouse, input, key);
     pending.current.delete(fingerprint);
     return result;
+  }
+  async function archiveProduct(code: string) {
+    if (
+      !window.confirm(
+        `Arsipkan SKU ${code} di semua gudang? Riwayat tetap tersimpan. Stok harus nol dan tidak ada pekerjaan tertunda.`,
+      )
+    )
+      return;
+    await mutate("/workspace/products/archive", { product: code });
+    setEdit({ code: "", name: "", unit: "PCS", factor: "1" });
+    setSelected(null);
+    await load();
+    setNotice("SKU diarsipkan.");
   }
   async function startCamera() {
     setCapture("");
@@ -415,7 +492,21 @@ export function InspectionWorkspace({
                       </span>
                     </button>
                   ))}
-                {!catalog.products.length && (
+                {loadingCatalog && <p role="status">Memuat master...</p>}
+                {!!catalog.products.length &&
+                  !catalog.products.some((p) =>
+                    `${p.code} ${p.name}`
+                      .toLowerCase()
+                      .includes(search.toLowerCase()),
+                  ) && (
+                    <p>
+                      Tidak ada hasil pencarian.{" "}
+                      <button onClick={() => setSearch("")}>
+                        Hapus pencarian
+                      </button>
+                    </p>
+                  )}
+                {!loadingCatalog && !catalog.products.length && (
                   <p>
                     Master belum tersedia. Admin dapat mengimpor ekspor master
                     BigSeller.
@@ -767,6 +858,34 @@ export function InspectionWorkspace({
                 Kode SKU adalah identitas tetap. Konversi yang memiliki riwayat
                 tidak dapat diubah; gunakan SKU baru.
               </p>
+              <ul aria-label="Daftar master barang">
+                {catalog.products.map((p) => (
+                  <li key={p.code}>
+                    <strong>
+                      {p.code} / {p.name}
+                    </strong>{" "}
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        setEdit({
+                          code: p.code,
+                          name: p.name,
+                          unit: p.uom,
+                          factor: String(p.uom_factor),
+                        })
+                      }
+                    >
+                      Edit {p.code}
+                    </button>{" "}
+                    <button
+                      disabled={busy}
+                      onClick={() => run(() => archiveProduct(p.code))}
+                    >
+                      Hapus SKU {p.code}
+                    </button>
+                  </li>
+                ))}
+              </ul>
               <select
                 aria-label="Pilih master untuk diedit"
                 value={edit.code}
@@ -860,28 +979,7 @@ export function InspectionWorkspace({
                   </p>
                   <button
                     disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        if (
-                          !window.confirm(
-                            "Arsipkan SKU di semua gudang? Riwayat tetap tersimpan.",
-                          )
-                        )
-                          return;
-                        await mutate("/workspace/products/archive", {
-                          product: edit.code,
-                        });
-                        setEdit({
-                          code: "",
-                          name: "",
-                          unit: "PCS",
-                          factor: "1",
-                        });
-                        setSelected(null);
-                        await load();
-                        setNotice("SKU diarsipkan.");
-                      })
-                    }
+                    onClick={() => run(() => archiveProduct(edit.code))}
                   >
                     Hapus SKU
                   </button>

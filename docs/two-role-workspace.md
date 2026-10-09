@@ -2,6 +2,16 @@
 
 This document supersedes the former five-role operating model. The main application now opens the inspection workspace, not the legacy transaction menu.
 
+## Logout and master-list regression fixes
+
+The active entry remains `frontend/src/main.tsx` -> `InspectionWorkspace` with the original green/sidebar layout.
+
+- Reproduced: logout previously required a still-valid session; after 30 minutes idle it returned 401 and left the UI signed in. Logout now revokes the supplied session and clears its cookie even after expiry or cookie removal. Origin checks remain mandatory; origin/network failures remain visible rather than pretending server logout succeeded.
+- Reproduced: catalog rendering waited for inspection history in one `Promise.all`. A history error hid a successful catalog response. Resources now load independently, with labeled failures. Warehouse/session changes invalidate older responses and clear search, editor, import, capture and review state; master-only items do not require locations or stock to appear.
+- Reproduced: delete was available only after selecting an existing SKU in the editor. Admin master rows now expose Edit and Hapus SKU directly, alongside the selected-item action and explicit confirmation. This still archives globally, preserves history, and rejects nonzero stock or unfinished work. User has no master actions.
+
+Regression commands: frontend `npm test` exercises actual DOM clicks with jsdom; `npm run test:integration` additionally requires backend dependencies and runs real HTTP login/logout/re-login, Admin create/CSV import, User catalog visibility in the same warehouse, and archive against a fresh in-memory PGlite database. Backend `npx tsx --test test/logout.test.ts test/workspace.test.ts` covers expired cookies, origin rejection, permissions and archival guards. Fixtures close their own servers and databases; no live database or migrations are touched. These tests verify reproducible code defects, not a diagnosis of any particular live deployment. Existing installations must still apply the documented migration 006/007 runtime grants; failures are no longer masked by an empty master list.
+
 ## Reviewable assumptions (not approved business decisions)
 
 1. User submits observed stock with a live photo. Official stock changes only after Admin approval. The user requested suggestions before final agreement; retain this safe provisional behavior until reviewed.
