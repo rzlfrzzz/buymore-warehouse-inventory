@@ -1021,10 +1021,13 @@ export function InspectionWorkspace({
                 Maksimal 2 MB / 2.000 baris. PO / SR hanya mengimpor master,
                 bukan jumlah transaksi. Nama kosong memakai nama lama atau kode
                 SKU sementara; edit nama setelah impor. Huruf dan nol awal SKU
-                dipertahankan. Hapus baris contoh template sebelum mengimpor.
+                dipertahankan sebagai teks. Jika muncul error <strong>Invalid SKU
+                at row N</strong>, pastikan kolom SKU di Excel disetel ke Text,
+                hapus spasi awal/akhir, dan pastikan SKU sudah benar sebelum
+                mengimpor. Hapus baris contoh template sebelum mengimpor.
               </p>
               <label>
-                File XLSX / CSV
+                File XLSX / CSV (SKU dibaca sebagai teks)
                 <input
                   type="file"
                   accept=".xlsx,.csv"

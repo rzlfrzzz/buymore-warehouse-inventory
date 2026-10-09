@@ -70,7 +70,7 @@ export function ConnectedLayout({
     ? ([
         {
           id: "counts",
-          label: "Inspeksi stok",
+          label: "Stock count",
           icon: ClipboardCheck,
           group: "WORKSPACE",
         },
