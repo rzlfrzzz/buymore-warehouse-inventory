@@ -137,6 +137,7 @@ function mockApi(
       if (override) return override;
       if (path.endsWith("/catalog")) return response(catalog);
       if (path.endsWith("/session")) return response(session());
+      if (path.includes("/workspace/reference-photos/")) return response(null);
       if (path.endsWith("/reference-photo"))
         return response({ error: "Not found" }, 404);
       return response(
@@ -151,6 +152,32 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("active inspection DOM", () => {
+  it("shows the warehouse reference photo or an empty thumbnail frame", async () => {
+    mockApi((path) => {
+      if (path.endsWith("/catalog")) return response(inspectionCatalog);
+      if (path.endsWith("/workspace/reference-photos/SKU1"))
+        return response({ mime: "image/jpeg", content: "cGhvdG8=" });
+      return undefined;
+    });
+    await mount("User");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
+      host
+        .querySelector(
+          '.inspection-product-thumbnail[aria-label="Foto referensi SKU1"] img',
+        )
+        ?.getAttribute("src"),
+    ).toBe("data:image/jpeg;base64,cGhvdG8=");
+    expect(
+      host.querySelector(
+        '.inspection-product-thumbnail[aria-label="Belum ada foto terakhir"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it.each(["Lokasi", "Batch"])(
     "clears quantity, capture and uploaded retry cache when %s changes",
     async (label) => {

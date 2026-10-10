@@ -7,6 +7,7 @@ import {
   type ConnectedPage,
 } from "../layouts/ConnectedLayout";
 import { ReferencePhoto, ExportComposer } from "./InspectionTools";
+import { ProductThumbnail } from "./ProductThumbnail";
 type Product = { code: string; name: string; uom: string; uom_factor: number };
 type Catalog = {
   products: Product[];
@@ -504,10 +505,16 @@ export function InspectionWorkspace({
                         setCapture("");
                       }}
                     >
-                      <span className="inspection-sku">{p.code}</span>
-                      <strong>{p.name}</strong>
-                      <span>
-                        {p.uom} / {p.uom_factor} PCS
+                      <ProductThumbnail
+                        product={p.code}
+                        warehouse={warehouse}
+                      />
+                      <span className="inspection-product-info">
+                        <span className="inspection-sku">{p.code}</span>
+                        <strong>{p.name}</strong>
+                        <span>
+                          {p.uom} / {p.uom_factor} PCS
+                        </span>
                       </span>
                     </button>
                   ))}

@@ -179,12 +179,44 @@
 }
 .inspection-products button {
   display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
   text-align: left;
-  gap: 7px;
+  gap: 12px;
   background: white;
   color: var(--ink);
   border: 1px solid var(--line);
-  padding: 18px;
+  padding: 10px 14px;
+}
+.inspection-product-info {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.inspection-product-info strong {
+  overflow-wrap: anywhere;
+}
+.inspection-product-thumbnail {
+  display: grid;
+  width: 76px;
+  height: 64px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f1f4ed;
+  color: #5c7068;
+  text-align: center;
+}
+.inspection-product-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.inspection-product-thumbnail span {
+  padding: 4px;
+  font-size: 10px;
+  line-height: 1.2;
 }
 .inspection-products button.selected {
   border-color: var(--green);
