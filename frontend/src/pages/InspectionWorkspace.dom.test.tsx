@@ -137,7 +137,7 @@ function mockApi(
       if (override) return override;
       if (path.endsWith("/catalog")) return response(catalog);
       if (path.endsWith("/session")) return response(session());
-      if (path.includes("/workspace/reference-photos/")) return response(null);
+      if (path.includes("/workspace/thumbnails/")) return response(null);
       if (path.endsWith("/reference-photo"))
         return response({ error: "Not found" }, 404);
       return response(
@@ -155,7 +155,7 @@ describe("active inspection DOM", () => {
   it("shows the warehouse reference photo or an empty thumbnail frame", async () => {
     mockApi((path) => {
       if (path.endsWith("/catalog")) return response(inspectionCatalog);
-      if (path.endsWith("/workspace/reference-photos/SKU1"))
+      if (path.endsWith("/workspace/thumbnails/SKU1"))
         return response({ mime: "image/jpeg", content: "cGhvdG8=" });
       return undefined;
     });
@@ -167,7 +167,7 @@ describe("active inspection DOM", () => {
     expect(
       host
         .querySelector(
-          '.inspection-product-thumbnail[aria-label="Foto referensi SKU1"] img',
+          '.inspection-product-thumbnail[aria-label="Foto produk SKU1"] img',
         )
         ?.getAttribute("src"),
     ).toBe("data:image/jpeg;base64,cGhvdG8=");

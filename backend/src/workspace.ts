@@ -475,6 +475,29 @@ export async function handleWorkspace(ctx: Context) {
       ),
     );
   }
+  const thumbnail = path.match(/^\/api\/workspace\/thumbnails\/([^/]+)$/);
+  if (method === "GET" && thumbnail) {
+    const product = decodeURIComponent(thumbnail[1]);
+    const result = await db.transaction(async (tx) => {
+      const reference = (await tx.query(
+        "SELECT mime,content FROM product_reference_photos WHERE warehouse=$1 AND product=$2",
+        [actor.warehouse, product],
+      )).rows[0];
+      if (reference) return reference;
+      // Filter before LIMIT: a newer private capture must not hide an older accessible one.
+      return (await tx.query(
+        `SELECT p.mime,p.content FROM inspections i
+         JOIN inspection_photos p ON p.id=i.photo AND p.warehouse=i.warehouse
+         WHERE i.warehouse=$1 AND i.product=$2 AND (p.owner=$3 OR $4='Admin')
+         ORDER BY p.created_at DESC,i.created_at DESC,p.id DESC LIMIT 1`,
+        [actor.warehouse, product, actor.id, actor.role],
+      )).rows[0];
+    });
+    return send(result ? {
+      mime: result.mime,
+      content: Buffer.from(result.content).toString("base64"),
+    } : null);
+  }
   const reference = path.match(/^\/api\/workspace\/reference-photos\/([^/]+)$/);
   if (method === "GET" && reference) {
     const product = decodeURIComponent(reference[1]);

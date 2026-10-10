@@ -7,6 +7,7 @@ export default defineConfig({
       "src/pages/ConnectedWorkspace.test.tsx",
       "src/pages/InspectionWorkspace.test.tsx",
       "src/pages/InspectionWorkspace.dom.test.tsx",
+      "src/pages/ProductThumbnail.test.tsx",
     ],
   },
 });

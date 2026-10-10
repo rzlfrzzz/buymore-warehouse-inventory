@@ -313,6 +313,30 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       ).status,
       403,
     );
+    const thumb = "/workspace/thumbnails/000123";
+    assert.deepEqual((await request(thumb, uc)).body, image);
+    assert.equal((await request(thumb, oc)).body, null);
+    assert.equal((await request("/workspace/thumbnails/000124", ac)).body, null);
+    assert.equal((await request("/workspace/thumbnails/missing", uc)).body, null);
+    const newer = await request("/workspace/photos", uc, png);
+    assert.equal((await request("/workspace/inspections", uc, {
+      ...observed, photo: newer.body.id,
+    })).status, 201);
+    assert.deepEqual((await request(thumb, uc)).body, png);
+    const newest = await request("/workspace/photos", oc, image);
+    assert.equal((await request("/workspace/inspections", oc, {
+      ...observed, photo: newest.body.id,
+    })).status, 201);
+    assert.deepEqual((await request(thumb, uc)).body, png);
+    assert.deepEqual((await request(thumb, ac)).body, image);
+    assert.deepEqual((await request(thumb, oc)).body, image);
+    assert.equal((await request(thumb, uc, undefined, randomUUID(), "X")).status, 403);
+    await db.transaction(async (tx) => {
+      await tx.query("INSERT INTO memberships VALUES($1,'X','User'),($2,'X','Admin')", [user, admin]);
+    });
+    // A valid membership in X must not expose W's inspection or reference photos.
+    assert.equal((await request(thumb, uc, undefined, randomUUID(), "X")).body, null);
+    assert.equal((await request(thumb, ac, undefined, randomUUID(), "X")).body, null);
     const photoKey = randomUUID();
     assert.equal(
       (
@@ -340,6 +364,10 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       (await request("/workspace/reference-photos/000123", uc)).body.content,
       png.content,
     );
+    assert.deepEqual((await request(thumb, ac)).body, png);
+    assert.deepEqual((await request(thumb, oc)).body, png);
+    assert.equal((await request(thumb, ac, undefined, randomUUID(), "X")).body, null);
+    await db.transaction((tx) => tx.query("DELETE FROM memberships WHERE warehouse='X'"));
     assert.equal(
       (
         await request(
@@ -365,6 +393,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       (await request("/workspace/reference-photos/000123", uc)).body,
       null,
     );
+    assert.deepEqual((await request(thumb, ac)).body, image);
     assert.equal(
       (await request("/workspace/products/archive", uc, { product: "000124" }))
         .status,

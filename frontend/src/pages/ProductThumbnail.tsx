@@ -10,6 +10,17 @@ export function ProductThumbnail({
   product: string;
   warehouse: string;
 }) {
+  // Remount synchronously so no previous warehouse's photo survives a context change.
+  return <Thumbnail key={JSON.stringify([warehouse, product])} product={product} warehouse={warehouse} />;
+}
+
+function Thumbnail({
+  product,
+  warehouse,
+}: {
+  product: string;
+  warehouse: string;
+}) {
   const frame = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<Photo>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -23,7 +34,7 @@ export function ProductThumbnail({
       if (requested) return;
       requested = true;
       void api<Photo>(
-        `/workspace/reference-photos/${encodeURIComponent(product)}`,
+        `/workspace/thumbnails/${encodeURIComponent(product)}`,
         warehouse,
       )
         .then((result) => {
@@ -67,7 +78,7 @@ export function ProductThumbnail({
       : status === "error"
         ? "Foto tidak tersedia"
         : hasPhoto
-          ? `Foto referensi ${product}`
+          ? `Foto produk ${product}`
           : "Belum ada foto terakhir";
 
   return (
@@ -80,6 +91,7 @@ export function ProductThumbnail({
       {hasPhoto ? (
         <img
           src={`data:${photo.mime};base64,${photo.content}`}
+          onError={() => { setPhoto(null); setStatus("error"); }}
           alt=""
           aria-hidden="true"
         />
