@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type AuthSession } from "../services/api";
-import { Camera, Boxes, Search, ShieldCheck } from "lucide-react";
+import {
+  Archive,
+  Camera,
+  Boxes,
+  Pencil,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 import "../inspection.css";
 import {
   ConnectedLayout,
@@ -65,6 +72,7 @@ export function InspectionWorkspace({
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [search, setSearch] = useState(""),
+    [masterSearch, setMasterSearch] = useState(""),
     [username, setUsername] = useState(""),
     [password, setPassword] = useState("");
   const [selected, setSelected] = useState<Product | null>(null),
@@ -897,33 +905,87 @@ export function InspectionWorkspace({
                 Kode SKU adalah identitas tetap. Konversi yang memiliki riwayat
                 tidak dapat diubah; gunakan SKU baru.
               </p>
-              <ul aria-label="Daftar master barang">
-                {catalog.products.map((p) => (
-                  <li key={p.code}>
-                    <strong>
-                      {p.code} / {p.name}
-                    </strong>{" "}
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        setEdit({
-                          code: p.code,
-                          name: p.name,
-                          unit: p.uom,
-                          factor: String(p.uom_factor),
-                        })
-                      }
+              <label className="master-list-search">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  aria-label="Cari SKU atau nama master"
+                  placeholder="Cari SKU atau nama"
+                  value={masterSearch}
+                  onChange={(e) => setMasterSearch(e.target.value)}
+                />
+              </label>
+              <ul
+                aria-label="Daftar master barang"
+                className="master-product-list"
+              >
+                {catalog.products
+                  .filter((p) =>
+                    `${p.code} ${p.name}`
+                      .toLowerCase()
+                      .includes(masterSearch.toLowerCase()),
+                  )
+                  .map((p) => (
+                    <li
+                      className={`master-product-row${edit.code === p.code ? " selected" : ""}`}
+                      key={p.code}
                     >
-                      Edit {p.code}
-                    </button>{" "}
-                    <button
-                      disabled={busy}
-                      onClick={() => run(() => archiveProduct(p.code))}
-                    >
-                      Hapus SKU {p.code}
-                    </button>
+                      <ProductThumbnail
+                        product={p.code}
+                        warehouse={warehouse}
+                      />
+                      <div className="master-product-identity">
+                        <strong title={p.name}>{p.name}</strong>
+                        <span className="inspection-sku">{p.code}</span>
+                        <span>
+                          {p.uom} / {p.uom_factor} PCS
+                        </span>
+                      </div>
+                      <div className="master-product-actions">
+                        <button
+                          type="button"
+                          className="master-icon-button"
+                          aria-label={`Edit ${p.code}`}
+                          title={`Edit ${p.code}`}
+                          disabled={busy}
+                          onClick={() =>
+                            setEdit({
+                              code: p.code,
+                              name: p.name,
+                              unit: p.uom,
+                              factor: String(p.uom_factor),
+                            })
+                          }
+                        >
+                          <Pencil size={15} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="master-icon-button archive"
+                          aria-label={`Arsipkan SKU ${p.code}`}
+                          title={`Arsipkan SKU ${p.code}`}
+                          disabled={busy}
+                          onClick={() => run(() => archiveProduct(p.code))}
+                        >
+                          <Archive size={15} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                {!catalog.products.length && (
+                  <li className="master-list-empty">
+                    Belum ada master barang.
                   </li>
-                ))}
+                )}
+                {!!catalog.products.length &&
+                  !catalog.products.some((p) =>
+                    `${p.code} ${p.name}`
+                      .toLowerCase()
+                      .includes(masterSearch.toLowerCase()),
+                  ) && (
+                    <li className="master-list-empty">
+                      Tidak ada hasil. Ubah kata pencarian.
+                    </li>
+                  )}
               </ul>
               <select
                 aria-label="Pilih master untuk diedit"

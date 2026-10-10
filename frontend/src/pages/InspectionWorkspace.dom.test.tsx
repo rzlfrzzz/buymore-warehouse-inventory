@@ -356,7 +356,7 @@ describe("active inspection DOM", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await mount();
     await click("Master & impor");
-    await click("Hapus SKU SKU1");
+    await click("Arsipkan SKU SKU1");
     expect(
       fetch.mock.calls.some(([url]) => String(url).endsWith("/archive")),
     ).toBe(false);
@@ -366,7 +366,7 @@ describe("active inspection DOM", () => {
     await click("Hapus SKU");
     expect(host.textContent).toContain("Stock must be zero");
     guarded = false;
-    await click("Hapus SKU SKU1");
+    await click("Arsipkan SKU SKU1");
     expect(host.textContent).toContain("SKU diarsipkan.");
     expect(
       host.querySelector('[aria-label="Daftar master barang"]')?.textContent,

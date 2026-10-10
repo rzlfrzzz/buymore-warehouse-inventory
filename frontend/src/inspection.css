@@ -401,6 +401,96 @@
 .inspection-reference h3 {
   margin-top: 0;
 }
+.master-list-search {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 8px !important;
+  margin: 16px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: #5c7068;
+}
+.master-list-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px !important;
+  border: 0 !important;
+  outline: 0;
+  background: transparent;
+}
+.master-product-list {
+  display: grid;
+  gap: 6px;
+  max-height: 420px;
+  overflow: auto;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.master-product-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+}
+.master-product-row.selected {
+  border-color: var(--green);
+  background: #f1f6ed;
+}
+.master-product-row .inspection-product-thumbnail {
+  width: 52px;
+  height: 46px;
+}
+.master-product-identity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.master-product-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.master-product-identity > span:last-child {
+  color: #5c7068;
+  font-size: 11px;
+}
+.master-product-actions {
+  display: flex;
+  gap: 5px;
+}
+.inspection-app .master-product-actions .master-icon-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--green);
+}
+.inspection-app .master-product-actions .master-icon-button:hover {
+  background: #eaf0e3;
+}
+.inspection-app .master-product-actions .master-icon-button.archive {
+  color: #8d4637;
+}
+.master-list-empty {
+  padding: 18px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  color: #5c7068;
+  text-align: center;
+  font-size: 13px;
+}
 @media (max-width: 760px) {
   .inspection-content .hero-panel {
     padding: 22px;
