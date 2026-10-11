@@ -514,7 +514,7 @@ describe("active inspection DOM", () => {
     expect(field("Kolom nama").value).toBe("Title");
     expect(host.textContent).toContain("0001/variant");
     const checkbox = (text: string) => [...host.querySelectorAll("label")].find(l => l.textContent?.includes(text))!.querySelector("input") as HTMLInputElement;
-    const reconcile = checkbox("Reaktivasi SKU ARCHIVED");
+    const reconcile = checkbox("Rekonsiliasi stok resmi:");
     const opening = checkbox("Impor stok awal juga");
     expect(reconcile.checked).toBe(false);
     await act(async () => opening.click());
@@ -522,15 +522,15 @@ describe("active inspection DOM", () => {
     await act(async () => reconcile.click());
     expect(opening.checked).toBe(false);
     expect(reconcile.checked).toBe(true);
-    expect(field("Alasan reaktivasi").required).toBe(true);
+    expect(field("Alasan rekonsiliasi").required).toBe(true);
     expect(field("Lokasi target rekonsiliasi tanpa batch").required).toBe(true);
-    expect(field("Kolom stok awal").required).toBe(true);
-    expect(checkbox("Saya konfirmasi reaktivasi global").required).toBe(true);
-    expect(checkbox("Saya konfirmasi reaktivasi global").checked).toBe(false);
+    expect(field("Kolom target stok fisik").required).toBe(true);
+    expect(checkbox("Saya konfirmasi update SKU aktif").required).toBe(true);
+    expect(checkbox("Saya konfirmasi update SKU aktif").checked).toBe(false);
     expect(host.textContent).toContain("PO/SR dilarang");
     await act(async () => opening.click());
     expect(reconcile.checked).toBe(false);
-    expect(host.textContent).not.toContain("Alasan reaktivasi");
+    expect(host.textContent).not.toContain("Alasan rekonsiliasi");
   });
   it("refreshes imported master products when returning to inspection", async () => {
     let imported = false;

@@ -1,12 +1,15 @@
-# Archived SKU reconciliation
+# SKU stock reconciliation
 
 Admin-only BigSeller MASTER import offers a separate, explicitly confirmed
 `ARCHIVED_RECONCILE` mode. Opening stock and master-only retain their existing
 behavior. PO/SR cannot reconcile. A nonempty reason and confirmation
-`REACTIVATE ARCHIVED SKU` are mandatory.
+`RECONCILE SKU STOCK` are mandatory. The legacy mode, audit action and checksum
+namespace remain stable; the old archived-only confirmation is rejected so callers
+must explicitly consent to the broader behavior.
 
-Every SKU must already exist and be archived. Active, unknown, duplicate, invalid,
-or blocked rows roll back the entire file, including reactivation and receipts.
+Active SKUs update via deltas, archived SKUs reactivate, and unknown SKUs are
+created using normal master validation and no-batch setup. Duplicate, invalid,
+or blocked rows roll back the entire file, including creation, reactivation and receipts.
 Compatible master fields update; the existing historical unit/conversion trigger
 still prohibits changing units with history.
 
@@ -14,11 +17,13 @@ The imported physical quantity multiplied by the conversion factor is the target
 for the selected warehouse, selected location, and empty (no-batch) batch only.
 Nonzero balances anywhere else are ambiguous and rejected, not reset. Pending
 inspections, active reservations, unfinished operation documents and unfinished
-count lines in any warehouse block global reactivation. An active legacy count
+count lines in any warehouse block reconciliation for every SKU. An active legacy count
 at the selected location also blocks it.
 
 The import/archive advisory lock, location lock and exclusive product locks are
-held in one transaction. Active-product triggers serialize new work against the
+held in one transaction. Unknown SKUs are inserted with conflict handling before
+the exclusive product lock and conflict checks, including concurrent creation.
+Active-product triggers serialize new work against the
 product locks. Reactivation precedes ledger insertion. Only target minus current
 balance is appended: positive or negative; zero creates no movement. Historical
 ledger, audit and command receipts are never deleted or overwritten. Audit records

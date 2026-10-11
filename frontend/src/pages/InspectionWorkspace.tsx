@@ -1245,7 +1245,7 @@ export function InspectionWorkspace({
                     e.preventDefault();
                     run(async () => {
                       if (reconcile && (!reconcileConfirmed || !reconcileReason.trim()))
-                        throw new Error("Alasan dan konfirmasi reaktivasi wajib diisi");
+                        throw new Error("Alasan dan konfirmasi rekonsiliasi wajib diisi");
                       await mutate("/workspace/import", {
                         ...file,
                         mapping,
@@ -1253,7 +1253,7 @@ export function InspectionWorkspace({
                         defaultFactor: Number(defaultFactor),
                         opening,
                         location,
-                        ...(reconcile ? { mode: "ARCHIVED_RECONCILE", reason: reconcileReason, confirmation: "REACTIVATE ARCHIVED SKU" } : {}),
+                        ...(reconcile ? { mode: "ARCHIVED_RECONCILE", reason: reconcileReason, confirmation: "RECONCILE SKU STOCK" } : {}),
                       });
                       setPreview(null);
                       setFile(null);
@@ -1275,7 +1275,7 @@ export function InspectionWorkspace({
                       ["code", "Kolom SKU"],
                       ["name", "Kolom nama"],
                       ["unit", "Kolom satuan (opsional)"],
-                      ["quantity", "Kolom stok awal"],
+                      ["quantity", reconcile ? "Kolom target stok fisik" : "Kolom stok awal"],
                     ] as const
                   ).map(([key, label]) => (
                     <label key={key}>
@@ -1329,14 +1329,14 @@ export function InspectionWorkspace({
                   <label className="inspection-check">
                     <input type="checkbox" disabled={preview.template !== "MASTER"} checked={reconcile}
                       onChange={(e) => { setReconcile(e.target.checked); setOpening(false); setReconcileConfirmed(false); }} />
-                    Reaktivasi SKU ARCHIVED + rekonsiliasi stok resmi
+                    Rekonsiliasi stok resmi: update SKU aktif / reaktivasi ARCHIVED / buat SKU baru
                   </label>
                   {reconcile && <>
-                    <p>Hanya SKU ARCHIVED; SKU aktif/tidak dikenal membatalkan seluruh impor. Target stok resmi hanya gudang pilihan / lokasi pilihan / tanpa batch (dikalikan PCS per satuan). Saldo di lokasi, batch, atau gudang lain dan pekerjaan tertunda di semua gudang ditolak. Reaktivasi berlaku global. Riwayat tetap utuh; hanya selisih positif/negatif ditambahkan, selisih nol tanpa mutasi. PO/SR dilarang.</p>
-                    <label>Alasan reaktivasi<input required maxLength={1000} value={reconcileReason} onChange={(e) => { setReconcileReason(e.target.value); setReconcileConfirmed(false); }} /></label>
-                    <label className="inspection-check"><input type="checkbox" required checked={reconcileConfirmed} onChange={(e) => setReconcileConfirmed(e.target.checked)} />Saya konfirmasi reaktivasi global dan target stok lokasi tanpa batch; bukan stok awal</label>
+                    <p>SKU aktif diperbarui, SKU ARCHIVED direaktivasi, dan SKU baru dibuat dengan validasi master normal. Target stok resmi hanya gudang pilihan / lokasi pilihan / tanpa batch (dikalikan PCS per satuan). Saldo di lokasi, batch, atau gudang lain dan pekerjaan tertunda di semua gudang ditolak. Reaktivasi berlaku global. Riwayat tetap utuh; hanya selisih positif/negatif ditambahkan, selisih nol tanpa mutasi. Perubahan satuan dengan riwayat ditolak. Satu baris gagal membatalkan seluruh impor. PO/SR dilarang.</p>
+                    <label>Alasan rekonsiliasi<input required maxLength={1000} value={reconcileReason} onChange={(e) => { setReconcileReason(e.target.value); setReconcileConfirmed(false); }} /></label>
+                    <label className="inspection-check"><input type="checkbox" required checked={reconcileConfirmed} onChange={(e) => setReconcileConfirmed(e.target.checked)} />Saya konfirmasi update SKU aktif, reaktivasi global SKU ARCHIVED, pembuatan SKU baru dan target stok lokasi tanpa batch; bukan stok awal</label>
                   </>}
-                  <p>
+                  {!reconcile && <p>
                     Pilih kolom stok fisik resmi dari ekspor MASTER secara
                     eksplisit. Jangan gunakan stok tersedia, reservasi, atau
                     jumlah pembelian. Tanpa contoh master yang terverifikasi,
@@ -1345,7 +1345,7 @@ export function InspectionWorkspace({
                     bukan menimpa ledger. SKU dengan riwayat mutasi di gudang
                     pilihan, termasuk saldo nol, tidak boleh menggunakan mode
                     ini. Riwayat SKU lain tidak menghalangi impor SKU baru.
-                  </p>
+                  </p>}
                   {(opening || reconcile) && (
                     <label>
                       {reconcile ? "Lokasi target rekonsiliasi tanpa batch" : "Lokasi stok awal"}
@@ -1383,7 +1383,7 @@ export function InspectionWorkspace({
                   </div>
                   <button disabled={busy}>
                     Konfirmasi impor{" "}
-                    {reconcile ? "reaktivasi ARCHIVED + rekonsiliasi" : opening ? "master + stok awal" : "master saja"}
+                    {reconcile ? "update aktif / reaktivasi / buat baru + rekonsiliasi" : opening ? "master + stok awal" : "master saja"}
                   </button>
                 </form>
               )}

@@ -839,7 +839,7 @@ export async function handleWorkspace(ctx: Context) {
     if (reconcile) {
       need(input.opening === false, "Reconciliation is separate from opening stock");
       text(input.reason, "reconciliation reason", 1000);
-      need(input.confirmation === "REACTIVATE ARCHIVED SKU", "Confirm archived SKU reactivation");
+      need(input.confirmation === "RECONCILE SKU STOCK", "Confirm active SKU update, archived SKU reactivation and new SKU creation");
     } else {
       need(input.reason === undefined && input.confirmation === undefined, "Reconciliation fields require explicit mode");
     }
@@ -952,14 +952,21 @@ export async function handleWorkspace(ctx: Context) {
         );
         const adjustments = [];
         for (const row of [...rows].sort((a, b) => a.code.localeCompare(b.code))) {
+          // Materialize unknown SKUs before locking/checking; a concurrent insert
+          // must finish before we inspect its product and any associated work.
+          if (reconcile)
+            await tx.query(
+              "INSERT INTO products(code,name,uom,uom_factor) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO NOTHING",
+              [row.code, row.name || row.code, row.unit, factor],
+            );
           const existing = (
             await tx.query("SELECT * FROM products WHERE code=$1 FOR UPDATE", [
               row.code,
             ])
           ).rows[0];
           need(
-            reconcile ? existing && !existing.active : !existing || existing.active,
-            reconcile ? `SKU ${row.code} must already be archived; active or unknown SKU rejected` : `SKU ${row.code} is archived; do not overwrite archived history`,
+            reconcile || !existing || existing.active,
+            `SKU ${row.code} is archived; do not overwrite archived history`,
             409,
           );
           if (reconcile) {
@@ -971,7 +978,7 @@ export async function handleWorkspace(ctx: Context) {
                UNION ALL SELECT 1 FROM stock_count_lines l JOIN stock_counts c ON c.id=l.count_id WHERE l.product=$1 AND c.status NOT IN ('COMPLETED','CANCELLED')`,
               [row.code, actor.warehouse, input.location],
             );
-            need(!conflicts.rows.length, `Cannot reactivate ${row.code}: stock outside selected warehouse/location/no-batch or unfinished work in any warehouse`, 409);
+            need(!conflicts.rows.length, `Cannot reconcile ${row.code}: stock outside selected warehouse/location/no-batch or unfinished work in any warehouse`, 409);
             // Active-product triggers take shared product locks; retain this exclusive
             // lock through reactivation, balance calculation, and ledger append.
             await tx.query("UPDATE products SET active=true WHERE code=$1", [row.code]);
