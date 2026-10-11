@@ -120,6 +120,78 @@ async function mount(role: "Admin" | "User" = "Admin") {
     ),
   );
 }
+it("shows official warehouse PCS without selecting a SKU", async () => {
+  mockApi((path) =>
+    path.endsWith("/catalog")
+      ? response({
+          ...catalog,
+          balances: [
+            { product: "SKU1", location: "L1", batch: "B1", quantity: 7 },
+            { product: "SKU1", location: "L2", batch: "B2", quantity: 3 },
+          ],
+        })
+      : undefined,
+  );
+  await mount();
+  expect(host.textContent).toContain("Stok resmi total gudang: 10 PCS");
+});
+it("distinguishes current location/batch stock from the inspection snapshot", async () => {
+  mockApi((path) => {
+    if (path.endsWith("/catalog"))
+      return response({
+        ...catalog,
+        balances: [
+          { product: "SKU1", location: "L1", batch: "B1", quantity: 7 },
+          { product: "SKU1", location: "L2", batch: "B1", quantity: 90 },
+        ],
+      });
+    if (path.endsWith("/inspections"))
+      return response([
+        {
+          id: "inspection1",
+          product: "SKU1",
+          name: "Master item",
+          location: "L1",
+          batch: "B1",
+          quantity: 5,
+          unit: "PCS",
+          base_quantity: 5,
+          snapshot: 4,
+          status: "APPROVED",
+          username: "operator",
+          photo: "photo1",
+        },
+      ]);
+  });
+  await mount();
+  await click("Tinjau inspeksi");
+  expect(host.textContent).toContain("Stok resmi sekarang (lokasi / batch)");
+  const cells = [...host.querySelectorAll("tbody td")].map(
+    (cell) => cell.textContent,
+  );
+  expect(cells).toContain("7 PCS");
+  expect(cells).toContain("4 PCS");
+  expect(cells).not.toContain("97 PCS");
+});
+it("requires global confirmation before bulk archive and displays conflicts", async () => {
+  const fetch = mockApi((path) =>
+    path.endsWith("/archive-all")
+      ? response({ error: "Global archive cancelled" }, 409)
+      : undefined,
+  );
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await mount();
+  await click("Master & impor");
+  await click("Arsipkan semua SKU aktif");
+  expect(
+    fetch.mock.calls.some(([url]) => String(url).endsWith("/archive-all")),
+  ).toBe(false);
+  confirm.mockReturnValue(true);
+  await click("Arsipkan semua SKU aktif");
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("SEMUA gudang"));
+  expect(host.textContent).toContain("Global archive cancelled");
+  expect(host.textContent).toContain("Master item");
+});
 function response(value: unknown, status = 200) {
   return { ok: status < 400, status, json: async () => value } as Response;
 }

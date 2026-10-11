@@ -114,7 +114,7 @@ it("real API and DOM: Admin creates master, User reads same warehouse, logout/lo
     await fill("Nama", "Created through DOM");
     await click("Simpan master");
     expect(host.textContent).toContain("Master disimpan.");
-    expect(host.textContent).toContain("Hapus SKU DOM-SKU");
+    expect(host.querySelector('button[aria-label="Arsipkan SKU DOM-SKU"]')).not.toBeNull();
     await act(async () => {
       const input = [...host.querySelectorAll('input[type="file"]')].find(
         (input) => input.getAttribute("accept")?.includes(".csv"),
@@ -134,6 +134,8 @@ it("real API and DOM: Admin creates master, User reads same warehouse, logout/lo
     });
     await settle();
     expect(host.textContent).toContain("Kolom SKU");
+    expect(host.textContent).toContain("hanya SKU tanpa mutasi di gudang pilihan");
+    expect(host.textContent).toContain("Riwayat SKU lain tidak menghalangi impor SKU baru.");
     for (const [label, value] of [
       ["Kolom SKU", "SKU"],
       ["Kolom nama", "Name"],
@@ -167,7 +169,7 @@ it("real API and DOM: Admin creates master, User reads same warehouse, logout/lo
     await click("Keluar");
     await login("admin");
     await click("Master & impor");
-    await click("Hapus SKU DOM-SKU");
+    await click("Arsipkan SKU DOM-SKU");
     expect(host.textContent).toContain("SKU diarsipkan.");
     expect(
       (await engine.query("SELECT active FROM products WHERE code='DOM-SKU'"))

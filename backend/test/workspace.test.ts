@@ -133,9 +133,59 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       403,
     );
     const content = Buffer.from(
+      "SKU,Name\nEMPTY1,Empty one\nEMPTY2,Empty two\n",
+    ).toString("base64");
+    assert.equal(
+      (
+        await request("/workspace/import", ac, {
+          content,
+          format: "csv",
+          mapping: { code: "SKU", name: "Name" },
+          defaultUnit: "PCS",
+          defaultFactor: 1,
+          opening: false,
+        })
+      ).status,
+      201,
+    );
+    const bulkArchiveKey = randomUUID();
+    const archived = await request(
+      "/workspace/products/archive-all",
+      ac,
+      { confirmation: "ARCHIVE ALL ACTIVE SKU" },
+      bulkArchiveKey,
+    );
+    assert.equal(archived.status, 200);
+    assert.equal(archived.body.count, 2);
+    assert.deepEqual(
+      (
+        await request(
+          "/workspace/products/archive-all",
+          ac,
+          { confirmation: "ARCHIVE ALL ACTIVE SKU" },
+          bulkArchiveKey,
+        )
+      ).body,
+      archived.body,
+    );
+    assert.equal(
+      (await request("/workspace/catalog", ac)).body.products.length,
+      0,
+    );
+    assert.equal(
+      Number(
+        (
+          await engine.query(
+            "SELECT count(*) AS n FROM products WHERE NOT active",
+          )
+        ).rows[0].n,
+      ),
+      2,
+    );
+    const stockContent = Buffer.from(
       "SKU,Name,Unit,Stock\n000123,Sample product,BOX,3\n000124,Second product,BOX,0\n",
     ).toString("base64");
-    const file = { content, format: "csv" };
+    const file = { content: stockContent, format: "csv" };
     const preview = await request("/workspace/import/preview", ac, file);
     assert.equal(preview.status, 200, JSON.stringify(preview.body));
     assert.equal(preview.body.rows[0][0], "000123");
@@ -158,6 +208,52 @@ test("two-role workspace: master import, private photos, inspection approvals, s
     let catalog = await request("/workspace/catalog", uc);
     assert.equal(catalog.body.balances[0].quantity, 15);
     assert.equal(catalog.body.products[0].code, "000123");
+    const bulk = { confirmation: "ARCHIVE ALL ACTIVE SKU" };
+    assert.equal(
+      (await request("/workspace/products/archive-all", uc, bulk)).status,
+      403,
+    );
+    assert.equal(
+      (await request("/workspace/products/archive-all", ac, {})).status,
+      400,
+    );
+    assert.equal(
+      (await request("/workspace/products/archive-all", ac, bulk)).status,
+      409,
+    );
+    assert.equal(
+      (await request("/workspace/catalog", ac)).body.products.length,
+      2,
+    );
+    const freshFile = Buffer.from(
+      "SKU,Name,Unit,Stock\nFRESH,New item,BOX,2\n",
+    ).toString("base64");
+    const existingHistory = await engine.query(
+      "SELECT * FROM inventory_ledger WHERE warehouse='W' AND product='000123' ORDER BY id",
+    );
+    assert.equal(
+      (await request("/workspace/import", ac, { ...input, content: freshFile }))
+        .status,
+      201,
+    );
+    assert.equal(
+      (await request("/workspace/catalog", ac)).body.products.some(
+        (p: any) => p.code === "FRESH",
+      ),
+      true,
+    );
+    assert.equal(
+      (await request("/workspace/catalog", ac)).body.balances.find(
+        (b: any) => b.product === "FRESH",
+      ).quantity,
+      10,
+    );
+    assert.deepEqual(
+      (await engine.query(
+        "SELECT * FROM inventory_ledger WHERE warehouse='W' AND product='000123' ORDER BY id",
+      )).rows,
+      existingHistory.rows,
+    );
     assert.equal(
       (
         await request("/workspace/products", uc, {
@@ -197,12 +293,18 @@ test("two-role workspace: master import, private photos, inspection approvals, s
         "SKU,Name,Unit,Stock\nNEW,New product,BOX,1\n000123,Existing,BOX,1\n",
       ).toString("base64"),
     };
-    assert.equal(
-      (await request("/workspace/import", ac, rollback)).status,
-      409,
+    const rejected = await request("/workspace/import", ac, rollback);
+    assert.equal(rejected.status, 409);
+    assert.match(rejected.body.error, /000123 has prior movements/);
+    assert.deepEqual(
+      (await engine.query(
+        "SELECT * FROM inventory_ledger WHERE warehouse='W' AND product='000123' ORDER BY id",
+      )).rows,
+      existingHistory.rows,
     );
     catalog = await request("/workspace/catalog", uc);
     assert(!catalog.body.products.some((p: any) => p.code === "NEW"));
+    assert.equal(catalog.body.products.find((p: any) => p.code === "000123").name, "Renamed");
     assert.equal(
       (
         await request("/workspace/photos", uc, {
@@ -316,27 +418,57 @@ test("two-role workspace: master import, private photos, inspection approvals, s
     const thumb = "/workspace/thumbnails/000123";
     assert.deepEqual((await request(thumb, uc)).body, image);
     assert.equal((await request(thumb, oc)).body, null);
-    assert.equal((await request("/workspace/thumbnails/000124", ac)).body, null);
-    assert.equal((await request("/workspace/thumbnails/missing", uc)).body, null);
+    assert.equal(
+      (await request("/workspace/thumbnails/000124", ac)).body,
+      null,
+    );
+    assert.equal(
+      (await request("/workspace/thumbnails/missing", uc)).body,
+      null,
+    );
     const newer = await request("/workspace/photos", uc, png);
-    assert.equal((await request("/workspace/inspections", uc, {
-      ...observed, photo: newer.body.id,
-    })).status, 201);
+    assert.equal(
+      (
+        await request("/workspace/inspections", uc, {
+          ...observed,
+          photo: newer.body.id,
+        })
+      ).status,
+      201,
+    );
     assert.deepEqual((await request(thumb, uc)).body, png);
     const newest = await request("/workspace/photos", oc, image);
-    assert.equal((await request("/workspace/inspections", oc, {
-      ...observed, photo: newest.body.id,
-    })).status, 201);
+    assert.equal(
+      (
+        await request("/workspace/inspections", oc, {
+          ...observed,
+          photo: newest.body.id,
+        })
+      ).status,
+      201,
+    );
     assert.deepEqual((await request(thumb, uc)).body, png);
     assert.deepEqual((await request(thumb, ac)).body, image);
     assert.deepEqual((await request(thumb, oc)).body, image);
-    assert.equal((await request(thumb, uc, undefined, randomUUID(), "X")).status, 403);
+    assert.equal(
+      (await request(thumb, uc, undefined, randomUUID(), "X")).status,
+      403,
+    );
     await db.transaction(async (tx) => {
-      await tx.query("INSERT INTO memberships VALUES($1,'X','User'),($2,'X','Admin')", [user, admin]);
+      await tx.query(
+        "INSERT INTO memberships VALUES($1,'X','User'),($2,'X','Admin')",
+        [user, admin],
+      );
     });
     // A valid membership in X must not expose W's inspection or reference photos.
-    assert.equal((await request(thumb, uc, undefined, randomUUID(), "X")).body, null);
-    assert.equal((await request(thumb, ac, undefined, randomUUID(), "X")).body, null);
+    assert.equal(
+      (await request(thumb, uc, undefined, randomUUID(), "X")).body,
+      null,
+    );
+    assert.equal(
+      (await request(thumb, ac, undefined, randomUUID(), "X")).body,
+      null,
+    );
     const photoKey = randomUUID();
     assert.equal(
       (
@@ -366,8 +498,13 @@ test("two-role workspace: master import, private photos, inspection approvals, s
     );
     assert.deepEqual((await request(thumb, ac)).body, png);
     assert.deepEqual((await request(thumb, oc)).body, png);
-    assert.equal((await request(thumb, ac, undefined, randomUUID(), "X")).body, null);
-    await db.transaction((tx) => tx.query("DELETE FROM memberships WHERE warehouse='X'"));
+    assert.equal(
+      (await request(thumb, ac, undefined, randomUUID(), "X")).body,
+      null,
+    );
+    await db.transaction((tx) =>
+      tx.query("DELETE FROM memberships WHERE warehouse='X'"),
+    );
     assert.equal(
       (
         await request(

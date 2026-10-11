@@ -479,24 +479,32 @@ export async function handleWorkspace(ctx: Context) {
   if (method === "GET" && thumbnail) {
     const product = decodeURIComponent(thumbnail[1]);
     const result = await db.transaction(async (tx) => {
-      const reference = (await tx.query(
-        "SELECT mime,content FROM product_reference_photos WHERE warehouse=$1 AND product=$2",
-        [actor.warehouse, product],
-      )).rows[0];
+      const reference = (
+        await tx.query(
+          "SELECT mime,content FROM product_reference_photos WHERE warehouse=$1 AND product=$2",
+          [actor.warehouse, product],
+        )
+      ).rows[0];
       if (reference) return reference;
       // Filter before LIMIT: a newer private capture must not hide an older accessible one.
-      return (await tx.query(
-        `SELECT p.mime,p.content FROM inspections i
+      return (
+        await tx.query(
+          `SELECT p.mime,p.content FROM inspections i
          JOIN inspection_photos p ON p.id=i.photo AND p.warehouse=i.warehouse
          WHERE i.warehouse=$1 AND i.product=$2 AND (p.owner=$3 OR $4='Admin')
          ORDER BY p.created_at DESC,i.created_at DESC,p.id DESC LIMIT 1`,
-        [actor.warehouse, product, actor.id, actor.role],
-      )).rows[0];
+          [actor.warehouse, product, actor.id, actor.role],
+        )
+      ).rows[0];
     });
-    return send(result ? {
-      mime: result.mime,
-      content: Buffer.from(result.content).toString("base64"),
-    } : null);
+    return send(
+      result
+        ? {
+            mime: result.mime,
+            content: Buffer.from(result.content).toString("base64"),
+          }
+        : null,
+    );
   }
   const reference = path.match(/^\/api\/workspace\/reference-photos\/([^/]+)$/);
   if (method === "GET" && reference) {
@@ -561,40 +569,66 @@ export async function handleWorkspace(ctx: Context) {
       }),
     );
   }
-  if (method === "POST" && path === "/api/workspace/products/archive") {
+  if (
+    method === "POST" &&
+    (path === "/api/workspace/products/archive" ||
+      path === "/api/workspace/products/archive-all")
+  ) {
+    admin(ctx);
+    const all = path.endsWith("/archive-all");
     const input = await ctx.body(ctx.req);
-    fields(input, ["product"]);
-    const product = text(input.product, "SKU", 64);
+    fields(input, all ? ["confirmation"] : ["product"]);
+    if (all)
+      need(
+        input.confirmation === "ARCHIVE ALL ACTIVE SKU",
+        "Confirm global archive of all active SKU",
+      );
+    const product = all ? null : text(input.product, "SKU", 64);
     return send(
-      await command(ctx, "master.archive", input, async (tx) => {
-        need(
-          (
+      await command(
+        ctx,
+        all ? "master.archive-all" : "master.archive",
+        input,
+        async (tx) => {
+          // Serialize with imports; row locks also exclude new work via active-product triggers.
+          await tx.query("SELECT pg_advisory_xact_lock(6190308)");
+          const products = (
             await tx.query(
-              "SELECT 1 FROM products WHERE code=$1 AND active FOR UPDATE",
-              [product],
+              all
+                ? "SELECT code FROM products WHERE active ORDER BY code FOR UPDATE"
+                : "SELECT code FROM products WHERE code=$1 AND active FOR UPDATE",
+              all ? [] : [product],
             )
-          ).rows.length,
-          "Unknown active SKU",
-          404,
-        );
-        const conflicts = await tx.query(
-          `SELECT 1 FROM inventory_ledger WHERE product=$1 GROUP BY warehouse,location,batch HAVING sum(delta)<>0
+          ).rows;
+          need(all || products.length, "Unknown active SKU", 404);
+          for (const { code } of products) {
+            const conflicts = await tx.query(
+              `SELECT 1 FROM inventory_ledger WHERE product=$1 GROUP BY warehouse,location,batch HAVING sum(delta)<>0
         UNION ALL SELECT 1 FROM inspections WHERE product=$1 AND status='PENDING'
         UNION ALL SELECT 1 FROM inventory_reservations WHERE product=$1 AND status='ACTIVE'
         UNION ALL SELECT 1 FROM operation_document_lines l JOIN operation_documents d ON d.id=l.document_id WHERE l.product=$1 AND d.status IN ('DRAFT','PENDING','VERIFIED')
         UNION ALL SELECT 1 FROM stock_count_lines l JOIN stock_counts c ON c.id=l.count_id WHERE l.product=$1 AND c.status NOT IN ('COMPLETED','CANCELLED')`,
-          [product],
-        );
-        need(
-          !conflicts.rows.length,
-          "Cannot archive: SKU has stock or unfinished work in a warehouse. Catalog deletion is global; finish work and clear balances first.",
-          409,
-        );
-        await tx.query("UPDATE products SET active=false WHERE code=$1", [
-          product,
-        ]);
-        return { product, archived: true };
-      }),
+              [code],
+            );
+            need(
+              !conflicts.rows.length,
+              `Cannot archive ${code}: SKU has stock or unfinished work in a warehouse. Global archive cancelled; no SKU archived. Finish work and clear balances first.`,
+              409,
+            );
+          }
+          for (const { code } of products)
+            await tx.query("UPDATE products SET active=false WHERE code=$1", [
+              code,
+            ]);
+          return all
+            ? {
+                archived: true,
+                count: products.length,
+                products: products.map((p) => p.code),
+              }
+            : { product, archived: true };
+        },
+      ),
     );
   }
   if (method === "POST" && path === "/api/workspace/export") {
@@ -853,7 +887,9 @@ export async function handleWorkspace(ctx: Context) {
         // BigSeller SKU values are identifiers, not necessarily ASCII codes;
         // preserve their text exactly after trimming surrounding whitespace.
         need(
-          code.length > 0 && code.length <= 64 && !/[\u0000-\u001f\u007f]/.test(code),
+          code.length > 0 &&
+            code.length <= 64 &&
+            !/[\u0000-\u001f\u007f]/.test(code),
           `Invalid SKU at row ${rowNumber} (column ${mapping.code}); use text SKUs without control characters`,
         );
         const identity = JSON.stringify([name, unit]);

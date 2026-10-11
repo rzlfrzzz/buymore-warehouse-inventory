@@ -154,17 +154,31 @@ export function InspectionWorkspace({
   }, []);
   const loadVersion = useRef(0);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(false);
+  function officialStock(product: string, location?: string, batch?: string) {
+    if (!catalogReady || loadingCatalog) return "Belum tersedia";
+    return `${catalog.balances
+      .filter(
+        (b) =>
+          b.product === product &&
+          (location === undefined || b.location === location) &&
+          (batch === undefined || b.batch === batch),
+      )
+      .reduce((sum, b) => sum + Number(b.quantity), 0)} PCS`;
+  }
   async function load() {
     if (!session || !warehouse) return;
     const version = ++loadVersion.current;
     const current = () => version === loadVersion.current;
     setLoadingCatalog(true);
+    setCatalogReady(false);
     // Independent resources must not hide a successfully loaded master list.
     await Promise.all([
       api<Catalog>("/workspace/catalog", warehouse)
         .then((c) => {
           if (!current()) return;
           setCatalog(c);
+          setCatalogReady(true);
           setLocation((l) =>
             c.locations.some((x) => x.id === l) ? l : c.locations[0]?.id || "",
           );
@@ -283,6 +297,24 @@ export function InspectionWorkspace({
     setSelected(null);
     await load();
     setNotice("SKU diarsipkan.");
+  }
+  async function archiveAll() {
+    if (
+      !window.confirm(
+        "Arsipkan SEMUA SKU aktif di SEMUA gudang, termasuk yang tidak terlihat karena pencarian? Riwayat dan audit tetap tersimpan. Jika satu SKU memiliki stok bukan nol atau pekerjaan tertunda, seluruh proses dibatalkan tanpa perubahan.",
+      )
+    )
+      return;
+    const result = await mutate<{ count: number }>(
+      "/workspace/products/archive-all",
+      {
+        confirmation: "ARCHIVE ALL ACTIVE SKU",
+      },
+    );
+    setEdit({ code: "", name: "", unit: "PCS", factor: "1" });
+    setSelected(null);
+    await load();
+    setNotice(`${result.count} SKU diarsipkan. Riwayat tetap tersimpan.`);
   }
   async function startCamera() {
     setCapture("");
@@ -523,6 +555,9 @@ export function InspectionWorkspace({
                         <span>
                           {p.uom} / {p.uom_factor} PCS
                         </span>
+                        <span>
+                          Stok resmi total gudang: {officialStock(p.code)}
+                        </span>
                       </span>
                     </button>
                   ))}
@@ -737,7 +772,8 @@ export function InspectionWorkspace({
                   <tr>
                     <th>Barang / lokasi</th>
                     <th>Teramati</th>
-                    <th>Snapshot</th>
+                    <th>Snapshot saat inspeksi (PCS)</th>
+                    <th>Stok resmi sekarang (lokasi / batch)</th>
                     <th>Status</th>
                     <th>Bukti / tindakan</th>
                   </tr>
@@ -758,6 +794,7 @@ export function InspectionWorkspace({
                         {i.base_quantity} PCS
                       </td>
                       <td>{i.snapshot} PCS</td>
+                      <td>{officialStock(i.product, i.location, i.batch)}</td>
                       <td>
                         {i.status}
                         <br />
@@ -901,6 +938,17 @@ export function InspectionWorkspace({
           <section className="inspection-grid">
             <article className="inspection-card">
               <h2>Master barang</h2>
+              <button
+                disabled={busy || !catalogReady || !catalog.products.length}
+                onClick={() => run(archiveAll)}
+              >
+                Arsipkan semua SKU aktif
+              </button>
+              <p>
+                Arsip berlaku global di semua gudang, bukan hanya hasil
+                pencarian. Tidak menghapus riwayat; seluruh proses ditolak jika
+                ada stok atau pekerjaan tertunda.
+              </p>
               <p>
                 Kode SKU adalah identitas tetap. Konversi yang memiliki riwayat
                 tidak dapat diubah; gunakan SKU baru.
@@ -1264,8 +1312,18 @@ export function InspectionWorkspace({
                       checked={opening}
                       onChange={(e) => setOpening(e.target.checked)}
                     />{" "}
-                    Impor stok awal juga (hanya SKU tanpa mutasi sebelumnya)
+                    Impor stok awal juga (hanya SKU tanpa mutasi di gudang pilihan)
                   </label>
+                  <p>
+                    Pilih kolom stok fisik resmi dari ekspor MASTER secara
+                    eksplisit. Jangan gunakan stok tersedia, reservasi, atau
+                    jumlah pembelian. Tanpa contoh master yang terverifikasi,
+                    kolom stok tidak dipilih otomatis. Nilai dikalikan PCS per
+                    satuan dan dicatat sebagai saldo awal di lokasi pilihan,
+                    bukan menimpa ledger. SKU dengan riwayat mutasi di gudang
+                    pilihan, termasuk saldo nol, tidak boleh menggunakan mode
+                    ini. Riwayat SKU lain tidak menghalangi impor SKU baru.
+                  </p>
                   {opening && (
                     <label>
                       Lokasi stok awal
