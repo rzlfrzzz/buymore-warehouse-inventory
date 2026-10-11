@@ -3,6 +3,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InspectionWorkspace } from "./InspectionWorkspace";
+import { InspectionThumbnail } from "./InspectionThumbnail";
 import type { AuthSession } from "../services/api";
 
 const session = (role: "Admin" | "User" = "Admin"): AuthSession => ({
@@ -224,6 +225,148 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("active inspection DOM", () => {
+  it("loads each review's evidence lazily and preserves photo and review actions", async () => {
+    const observers: {
+      callback: IntersectionObserverCallback;
+      observer: IntersectionObserver;
+    }[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observers.push({
+            callback,
+            observer: this as unknown as IntersectionObserver,
+          });
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const fetch = mockApi((path) => {
+      if (path.endsWith("/inspections"))
+        return response([
+          {
+            id: "old",
+            product: "SKU1",
+            name: "Master item",
+            location: "L1",
+            quantity: 5,
+            unit: "PCS",
+            base_quantity: 5,
+            snapshot: 4,
+            status: "PENDING",
+            username: "operator",
+            photo: "evidence-old",
+          },
+          {
+            id: "new",
+            product: "SKU1",
+            name: "Master item",
+            status: "APPROVED",
+            photo: "evidence-new",
+          },
+          { id: "missing", product: "SKU1", status: "APPROVED", photo: null },
+        ]);
+      if (path.endsWith("/photos/evidence-old"))
+        return response({ mime: "image/jpeg", content: "b2xk" });
+      if (path.endsWith("/photos/evidence-new"))
+        return response({ error: "Forbidden" }, 403);
+    });
+    await mount();
+    await click("Tinjau inspeksi");
+    expect(
+      fetch.mock.calls.some(([url]) => String(url).includes("/photos/")),
+    ).toBe(false);
+    expect(host.textContent).toContain("Memuat bukti foto");
+    expect(host.textContent).toContain("Belum ada bukti foto");
+    await act(async () => {
+      for (const { callback, observer } of observers)
+        callback(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          observer,
+        );
+    });
+    const calls = fetch.mock.calls.filter(([url]) =>
+      String(url).includes("/photos/"),
+    );
+    expect(calls.map(([url]) => url)).toEqual([
+      "/api/workspace/photos/evidence-old",
+      "/api/workspace/photos/evidence-new",
+    ]);
+    expect(calls[0][1]).toMatchObject({
+      credentials: "same-origin",
+      headers: { "X-Warehouse": "W" },
+    });
+    const image = host.querySelector(".inspection-review-thumbnail img")!;
+    expect(image.getAttribute("src")).toBe("data:image/jpeg;base64,b2xk");
+    expect(host.textContent).toContain("Bukti foto tidak tersedia");
+    await click("Lihat foto");
+    expect(
+      host.querySelector(".inspection-evidence")?.getAttribute("src"),
+    ).toBe("data:image/jpeg;base64,b2xk");
+    await click("Tutup foto");
+    expect(host.querySelector(".inspection-evidence")).toBeNull();
+    await act(async () => image.dispatchEvent(new Event("error")));
+    expect(host.querySelector(".inspection-review-thumbnail img")).toBeNull();
+    await changeField("Alasan review", "Sesuai bukti");
+    await click("Setujui");
+    expect(
+      fetch.mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith("/inspections/old/approve") &&
+          init?.body === JSON.stringify({ reason: "Sesuai bukti" }),
+      ),
+    ).toBe(true);
+    await click("Tolak");
+    expect(
+      fetch.mock.calls.some(([url]) =>
+        String(url).endsWith("/inspections/old/reject"),
+      ),
+    ).toBe(true);
+  });
+
+  it("resets inspection evidence on context changes and ignores stale requests", async () => {
+    const pending = deferred<Response>();
+    const fetch = mockApi((path, init) => {
+      if (path.endsWith("/photos/shared"))
+        return (init.headers as Record<string, string>)["X-Warehouse"] === "W"
+          ? pending.promise
+          : response({ mime: "image/jpeg", content: "bmV3" });
+    });
+    await mount();
+    await act(async () =>
+      root.render(
+        <InspectionThumbnail photo="shared" inspection="one" warehouse="W" />,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <InspectionThumbnail photo="shared" inspection="one" warehouse="X" />,
+      ),
+    );
+    expect(host.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/jpeg;base64,bmV3",
+    );
+    await act(async () =>
+      pending.resolve(response({ mime: "image/jpeg", content: "b2xk" })),
+    );
+    expect(host.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/jpeg;base64,bmV3",
+    );
+    await act(async () =>
+      root.render(
+        <InspectionThumbnail photo={null} inspection="two" warehouse="X" />,
+      ),
+    );
+    expect(host.querySelector("img")).toBeNull();
+    expect(host.textContent).toContain("Belum ada bukti foto");
+    expect(
+      fetch.mock.calls.filter(([url]) => String(url).includes("/photos/"))
+        .length,
+    ).toBe(2);
+  });
+
   it("shows the warehouse reference photo or an empty thumbnail frame", async () => {
     mockApi((path) => {
       if (path.endsWith("/catalog")) return response(inspectionCatalog);
@@ -513,7 +656,10 @@ describe("active inspection DOM", () => {
     expect(field("Kolom SKU").value).toBe("SKU Name");
     expect(field("Kolom nama").value).toBe("Title");
     expect(host.textContent).toContain("0001/variant");
-    const checkbox = (text: string) => [...host.querySelectorAll("label")].find(l => l.textContent?.includes(text))!.querySelector("input") as HTMLInputElement;
+    const checkbox = (text: string) =>
+      [...host.querySelectorAll("label")]
+        .find((l) => l.textContent?.includes(text))!
+        .querySelector("input") as HTMLInputElement;
     const reconcile = checkbox("Rekonsiliasi stok resmi:");
     const opening = checkbox("Impor stok awal juga");
     expect(reconcile.checked).toBe(false);
