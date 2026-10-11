@@ -261,8 +261,8 @@ test("HTTP authentication, authorization, blind count, workflow, throttling and 
         request("/api/login", "", { username: "parallel", password: "wrong" }),
       ),
     );
-    assert.equal(parallel.filter((r) => r.status === 401).length, 10);
-    assert.equal(parallel.filter((r) => r.status === 429).length, 2);
+    assert.equal(parallel.filter((r) => r.status === 401).length, 5);
+    assert.equal(parallel.filter((r) => r.status === 429).length, 7);
     assert.equal(
       (
         await request("/api/products", head, {

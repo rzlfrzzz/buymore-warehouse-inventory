@@ -5,6 +5,7 @@ export default defineConfig({
       "src/services/api.test.ts",
       "src/services/overview.test.ts",
       "src/pages/ConnectedWorkspace.test.tsx",
+      "src/pages/AccountPin.test.tsx",
       "src/pages/InspectionWorkspace.test.tsx",
       "src/pages/InspectionWorkspace.dom.test.tsx",
       "src/pages/ProductThumbnail.test.tsx",

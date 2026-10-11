@@ -20,6 +20,14 @@ const render = (role: AuthSession["memberships"][number]["role"]) =>
     />,
   );
 describe("active connected workspace", () => {
+  it("offers optional PIN enrollment only for exclusively User memberships", () => {
+    expect(render("User")).toContain("Atur PIN login");
+    expect(render("Admin")).not.toContain("Atur PIN login");
+    const mixed = session("User");
+    mixed.memberships.push({ warehouse: "OTHER", role: "Admin" });
+    expect(renderToStaticMarkup(<OperationsWorkspace initialSession={mixed} initialWarehouse="WH2" initialBoot={false} />)).not.toContain("Atur PIN login");
+    expect(renderToStaticMarkup(<OperationsWorkspace initialBoot={false} />)).toContain("Gunakan PIN karyawan");
+  });
   it("renders boot status without demo data", () => {
     const html = renderToStaticMarkup(<ConnectedWorkspace />);
     expect(html).toContain('role="status"');

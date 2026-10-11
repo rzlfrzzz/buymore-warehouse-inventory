@@ -184,11 +184,15 @@ export async function createApi(
         );
       if (method === "POST" && path === "/api/login") {
         const input = await body(req);
-        fields(input, ["username", "password"]);
+        fields(input, ["username", "password", "pin"]);
+        const pinLogin = input.pin !== undefined;
+        requireValue(pinLogin ? input.password === undefined : input.password !== undefined, 400, "Choose one credential");
+        if (pinLogin)
+          requireValue(typeof input.pin === "string" && /^[0-9]{6}$/.test(input.pin), 400, "PIN must be exactly 6 digits");
         const username = text(input.username, "username", 100)
           .trim()
           .toLowerCase();
-        const password = text(input.password, "password", 256);
+        const password = pinLogin ? input.pin as string : text(input.password, "password", 256);
         const ipKey = tokenHash(`ip:${ip}`),
           userKey = tokenHash(`user:${username}`);
         const keys = [ipKey, userKey].sort();
@@ -203,20 +207,20 @@ export async function createApi(
                 [key],
               )
             ).rows[0];
-            if (r?.active && r.attempts >= (key === ipKey ? 100 : 10))
+            if (r?.active && r.attempts >= (key === ipKey ? 100 : 5))
               return 429;
           }
           const user = (
             await tx.query(
-              "SELECT id,password_hash,enabled FROM users WHERE username=$1",
+              "SELECT u.id,u.password_hash,u.enabled,p.pin_hash, EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=u.id) AND NOT EXISTS(SELECT 1 FROM memberships m WHERE m.user_id=u.id AND m.role<>'User') AS pin_allowed FROM users u LEFT JOIN user_pins p ON p.user_id=u.id WHERE u.username=$1",
               [username],
             )
           ).rows[0];
           const valid = await verifyPassword(
             password,
-            user?.password_hash || dummyHash,
+            (pinLogin ? (user?.pin_allowed && user?.pin_hash) : user?.password_hash) || dummyHash,
           );
-          if (!valid || !user?.enabled) {
+          if (!valid || !user?.enabled || (pinLogin && (!user.pin_allowed || !user.pin_hash))) {
             for (const key of keys)
               await tx.query(
                 "INSERT INTO login_attempts VALUES ($1,1,now()+interval '15 minutes') ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN login_attempts.reset_at<=now() THEN 1 ELSE login_attempts.attempts+1 END,reset_at=CASE WHEN login_attempts.reset_at<=now() THEN now()+interval '15 minutes' ELSE login_attempts.reset_at END",
@@ -309,6 +313,32 @@ export async function createApi(
       );
       if (method === "GET" && path === "/api/session")
         return send(res, 200, { user, memberships });
+      if (method === "POST" && path === "/api/account/pin") {
+        const input = await body(req);
+        fields(input, ["password", "pin"]);
+        const password = text(input.password, "password", 256);
+        requireValue(typeof input.pin === "string" && /^[0-9]{6}$/.test(input.pin), 400, "PIN must be exactly 6 digits");
+        const key = tokenHash(`user:${user.username}`);
+        const outcome = await db.transaction(async (tx) => {
+          // Share the login lock and counter; enrollment cannot reset a login lockout.
+          await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
+          const attempt = (await tx.query("SELECT attempts,reset_at>now() AS active FROM login_attempts WHERE key=$1", [key])).rows[0];
+          if (attempt?.active && attempt.attempts >= 5) return 429;
+          const account = (await tx.query("SELECT password_hash,enabled FROM users WHERE id=$1 FOR UPDATE", [user.id])).rows[0];
+          const roles = (await tx.query("SELECT role FROM memberships WHERE user_id=$1", [user.id])).rows;
+          if (!account?.enabled || !roles.length || roles.some((m) => m.role !== "User")) return 403;
+          if (!await verifyPassword(password, account.password_hash)) {
+            await tx.query("INSERT INTO login_attempts VALUES ($1,1,now()+interval '15 minutes') ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN login_attempts.reset_at<=now() THEN 1 ELSE login_attempts.attempts+1 END,reset_at=CASE WHEN login_attempts.reset_at<=now() THEN now()+interval '15 minutes' ELSE login_attempts.reset_at END", [key]);
+            return 401;
+          }
+          await tx.query("INSERT INTO user_pins(user_id,pin_hash) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET pin_hash=excluded.pin_hash", [user.id, await hashPassword(input.pin as string)]);
+          return 200;
+        });
+        await security(outcome === 200 ? "pin_changed" : "pin_change_failure", outcome);
+        if (outcome === 429) res.setHeader("Retry-After", "900");
+        requireValue(outcome === 200, outcome, outcome === 429 ? "Too many attempts; retry after 15 minutes" : "PIN change denied");
+        return send(res, 200, { ok: true });
+      }
       const warehouse = text(req.headers["x-warehouse"], "warehouse", 100);
       const member = memberships.find((m) => m.warehouse === warehouse);
       requireValue(member, 403, "Warehouse access denied");

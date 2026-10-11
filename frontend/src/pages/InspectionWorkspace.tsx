@@ -16,6 +16,7 @@ import {
 import { ReferencePhoto, ExportComposer } from "./InspectionTools";
 import { ProductThumbnail } from "./ProductThumbnail";
 import { InspectionThumbnail } from "./InspectionThumbnail";
+import { AccountPin } from "./AccountPin";
 type Product = { code: string; name: string; uom: string; uom_factor: number };
 type Catalog = {
   products: Product[];
@@ -75,7 +76,9 @@ export function InspectionWorkspace({
     [search, setSearch] = useState(""),
     [masterSearch, setMasterSearch] = useState(""),
     [username, setUsername] = useState(""),
-    [password, setPassword] = useState("");
+    [password, setPassword] = useState(""),
+    [pin, setPin] = useState(""),
+    [loginMethod, setLoginMethod] = useState<"password" | "pin">("password");
   const [selected, setSelected] = useState<Product | null>(null),
     [location, setLocation] = useState(""),
     [batch, setBatch] = useState(""),
@@ -394,14 +397,40 @@ export function InspectionWorkspace({
             <span className="subtle-chip">WAREHOUSE WORKSPACE</span>
             <h2>Selamat datang kembali.</h2>
             <p>Masuk dengan akun gudang Anda untuk melanjutkan.</p>
+            <div role="group" aria-label="Metode login">
+              {(["password", "pin"] as const).map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={loginMethod === method}
+                  onClick={() => {
+                    setLoginMethod(method);
+                    setUsername("");
+                    setPassword("");
+                    setPin("");
+                    setError("");
+                  }}
+                >
+                  {method === "password" ? "Password" : "PIN"}
+                </button>
+              ))}
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (loginMethod === "pin" && !/^[0-9]{6}$/.test(pin)) {
+                  setError("PIN harus 6 digit.");
+                  setPin("");
+                  return;
+                }
+                const credentials = loginMethod === "pin"
+                  ? { username, pin }
+                  : { username, password };
+                setPassword("");
+                setPin("");
                 run(async () => {
-                  await api("/login", undefined, {
-                    username,
-                    password,
-                  });
+                  await api("/login", undefined, credentials);
                   const s = await api<AuthSession>("/session");
                   setSession(s);
                   setWarehouse(s.memberships[0]?.warehouse || "");
@@ -418,7 +447,7 @@ export function InspectionWorkspace({
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </label>
-              <label>
+              {loginMethod === "password" ? <label>
                 Password
                 <input
                   type="password"
@@ -427,7 +456,20 @@ export function InspectionWorkspace({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
-              </label>
+              </label> : <label>
+                PIN
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  minLength={6}
+                  maxLength={6}
+                  autoComplete="current-password"
+                  required
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                />
+              </label>}
               <button disabled={busy}>Masuk workspace</button>
             </form>
             {error && <p role="alert">{error}</p>}
@@ -480,6 +522,10 @@ export function InspectionWorkspace({
       }
     >
       <div className="inspection-app inspection-content">
+        {session.memberships.length > 0 &&
+          session.memberships.every((membership) => membership.role === "User") && (
+            <AccountPin key={session.user.id} />
+          )}
         <section className="inspection-hero hero-panel">
           <div className="hero-copy">
             <p className="inspection-eyebrow">LIVE INVENTORY / {warehouse}</p>

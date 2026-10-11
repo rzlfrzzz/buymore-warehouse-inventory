@@ -3,6 +3,7 @@ import { api, ApiError, type AuthSession } from "../services/api";
 import { loadOverview, type Overview } from "../services/overview";
 import { CountWorkspace } from "./CountWorkspace";
 import { MasterEntry } from "./MasterEntry";
+import { AccountPin } from "./AccountPin";
 
 import {
   ConnectedLayout,
@@ -133,6 +134,7 @@ export function OperationsWorkspace({
   const [message, setMessage] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [pinLogin, setPinLogin] = useState(false);
   const [page, setPage] = useState<Page>("dashboard");
   const [master, setMaster] = useState<Master>({
     products: [],
@@ -535,8 +537,9 @@ export function OperationsWorkspace({
               onSubmit={(e) => {
                 e.preventDefault();
                 void run(async () => {
-                  await api("/login", undefined, { username, password });
+                  const input = pinLogin ? { username, pin: password } : { username, password };
                   setPassword("");
+                  await api("/login", undefined, input);
                   await authenticate();
                 });
               }}
@@ -551,10 +554,13 @@ export function OperationsWorkspace({
                 />
               </label>
               <label>
-                Password
+                {pinLogin ? "PIN 6 digit" : "Password"}
                 <input
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete={pinLogin ? "off" : "current-password"}
+                  inputMode={pinLogin ? "numeric" : undefined}
+                  pattern={pinLogin ? "[0-9]{6}" : undefined}
+                  maxLength={pinLogin ? 6 : 256}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -565,6 +571,9 @@ export function OperationsWorkspace({
                   {error}
                 </p>
               )}
+              <button type="button" className="button" disabled={busy} onClick={() => { setPinLogin(!pinLogin); setPassword(""); setError(""); }}>
+                {pinLogin ? "Gunakan password" : "Gunakan PIN karyawan"}
+              </button>
               <button className="button primary" disabled={busy}>
                 {busy ? "Menghubungkan..." : "Masuk ke workspace"}
                 <ArrowRight size={18} />
@@ -653,6 +662,9 @@ export function OperationsWorkspace({
         })
       }
     >
+      {session.memberships.length > 0 && session.memberships.every((m) => m.role === "User") && (
+        <AccountPin key={`${session.user.id}:${warehouse}:${page}`} />
+      )}
       <header className="page-heading">
         <span className="eyebrow">
           {warehouse || "WORKSPACE"} / {role || "Tanpa akses"}

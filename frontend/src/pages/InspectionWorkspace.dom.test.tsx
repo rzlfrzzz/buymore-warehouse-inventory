@@ -107,7 +107,7 @@ function button(text: string) {
 async function click(text: string) {
   await act(async () => button(text).click());
 }
-async function mount(role: "Admin" | "User" = "Admin") {
+async function mount(role: "Admin" | "User" | null = "Admin", initialSession = role ? session(role) : null) {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   host = document.createElement("div");
   document.body.append(host);
@@ -116,7 +116,7 @@ async function mount(role: "Admin" | "User" = "Admin") {
     root.render(
       <InspectionWorkspace
         initialBoot={false}
-        initialSession={session(role)}
+        initialSession={initialSession}
       />,
     ),
   );
@@ -225,6 +225,81 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("active inspection DOM", () => {
+  it("posts username and exact six-digit PIN without a password", async () => {
+    const fetch = mockApi();
+    await mount(null);
+    await click("PIN");
+    await changeField("Username", "operator");
+    await changeField("PIN", "012345");
+    expect(field("PIN").getAttribute("pattern")).toBe("[0-9]{6}");
+    await click("Masuk workspace");
+    const request = fetch.mock.calls.find(([url]) => url === "/api/login")!;
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ username: "operator", pin: "012345" });
+    expect(request[1]?.method).toBe("POST");
+  });
+  it("clears credentials when switching login methods and preserves password login", async () => {
+    const fetch = mockApi();
+    await mount(null);
+    await changeField("Username", "old-user");
+    await changeField("Password", "old-password");
+    await click("PIN");
+    expect(field("Username").value).toBe("");
+    await changeField("PIN", "012345");
+    await click("Password");
+    expect(field("Password").value).toBe("");
+    await click("PIN");
+    expect(field("PIN").value).toBe("");
+    await click("Password");
+    await changeField("Username", "operator");
+    await changeField("Password", "current-password");
+    await click("Masuk workspace");
+    const request = fetch.mock.calls.find(([url]) => url === "/api/login")!;
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ username: "operator", password: "current-password" });
+  });
+  it.each(["12345", "1234567", "abcdef"])("rejects invalid PIN %s without a request", async (pin) => {
+    const fetch = mockApi();
+    await mount(null);
+    await click("PIN");
+    await changeField("Username", "operator");
+    await changeField("PIN", pin);
+    await act(async () => {
+      host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(fetch.mock.calls.some(([url]) => url === "/api/login")).toBe(false);
+    expect(host.textContent).toContain("PIN harus 6 digit.");
+  });
+  it.each(["User", "Admin", "mixed", "none"] as const)("limits PIN settings to exclusively User memberships: %s", async (role) => {
+    mockApi();
+    const auth = session(role === "Admin" ? "Admin" : "User");
+    if (role === "mixed") auth.memberships[1].role = "Admin";
+    if (role === "none") auth.memberships = [];
+    await mount(null, auth);
+    const summary = [...host.querySelectorAll("summary")].find((item) => item.textContent === "Akun saya / Atur PIN login");
+    expect(Boolean(summary)).toBe(role === "User");
+    if (summary) expect(summary.closest("details")!.open).toBe(false);
+  });
+  it("saves own PIN without warehouse scope and clears secrets across logout", async () => {
+    const fetch = mockApi((path) => path.endsWith("/session") ? response(session("User")) : undefined);
+    await mount("User");
+    await changeField("Password saat ini", "current-password");
+    await changeField("PIN baru", "012345");
+    await changeField("Konfirmasi PIN", "012345");
+    await act(async () => {
+      field("PIN baru").closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    const request = fetch.mock.calls.find(([url]) => url === "/api/account/pin")!;
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ password: "current-password", pin: "012345" });
+    expect(request[1]?.headers).not.toHaveProperty("X-Warehouse");
+    expect(field("PIN baru").value).toBe("");
+    await changeField("Password saat ini", "unsaved-password");
+    await click("Keluar");
+    await changeField("Username", "operator");
+    await changeField("Password", "current-password");
+    await click("Masuk workspace");
+    expect(field("Password saat ini").value).toBe("");
+    expect(field("PIN baru").value).toBe("");
+    expect(field("Konfirmasi PIN").value).toBe("");
+  });
   it("loads each review's evidence lazily and preserves photo and review actions", async () => {
     const observers: {
       callback: IntersectionObserverCallback;

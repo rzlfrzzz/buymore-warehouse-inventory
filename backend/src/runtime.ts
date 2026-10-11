@@ -40,6 +40,7 @@ export async function migrate(db: Runtime) {
       [6, "006-inspection.sql"],
       [7, "007-catalog-tools.sql"],
       [8, "008-bigseller-sku.sql"],
+      [9, "009-pin-login.sql"],
     ] as const) {
       if (
         !(
