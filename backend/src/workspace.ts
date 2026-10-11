@@ -830,7 +830,19 @@ export async function handleWorkspace(ctx: Context) {
       "defaultFactor",
       "opening",
       "location",
+      "mode",
+      "reason",
+      "confirmation",
     ]);
+    const reconcile = input.mode === "ARCHIVED_RECONCILE";
+    need(input.mode === undefined || reconcile, "Unknown import mode");
+    if (reconcile) {
+      need(input.opening === false, "Reconciliation is separate from opening stock");
+      text(input.reason, "reconciliation reason", 1000);
+      need(input.confirmation === "REACTIVATE ARCHIVED SKU", "Confirm archived SKU reactivation");
+    } else {
+      need(input.reason === undefined && input.confirmation === undefined, "Reconciliation fields require explicit mode");
+    }
     const parsed = await parseMaster(input),
       mapping = input.mapping;
     need(
@@ -864,10 +876,10 @@ export async function handleWorkspace(ctx: Context) {
     const defaultUnit = text(input.defaultUnit, "default unit", 30),
       factor = integer(input.defaultFactor, "factor", 1);
     need(
-      parsed.template === "MASTER" || !input.opening,
+      parsed.template === "MASTER" || (!input.opening && !reconcile),
       "PO/SR imports are master only; transaction quantities are never opening stock",
     );
-    if (input.opening) {
+    if (input.opening || reconcile) {
       text(input.location, "opening location", 100);
       need(mapping.quantity, "Map opening quantity");
     }
@@ -905,7 +917,7 @@ export async function handleWorkspace(ctx: Context) {
           "Invalid unit/factor; PCS factor is 1",
         );
         let quantity = 0;
-        if (input.opening) {
+        if (input.opening || reconcile) {
           need(
             /^\d+$/.test(get(row, "quantity")),
             `Invalid opening quantity for ${code}`,
@@ -920,32 +932,50 @@ export async function handleWorkspace(ctx: Context) {
       .filter((row) => row !== null);
     need(rows.length > 0, "No product rows");
     return send(
-      await command(ctx, "master.import", input, async (tx) => {
+      await command(ctx, reconcile ? "master.reconcile-archived" : "master.import", input, async (tx) => {
         await tx.query("SELECT pg_advisory_xact_lock(6190308)");
-        if (input.opening) await lockLocation(tx, actor, input.location);
+        if (input.opening || reconcile) await lockLocation(tx, actor, input.location);
+        // A separate namespace permits one explicit reconciliation of an old import,
+        // while retaining the original receipt and duplicate-file protection.
+        const checksum = reconcile ? `archived-reconcile:${parsed.checksum}` : parsed.checksum;
         const duplicate = (
           await tx.query(
             "SELECT id FROM master_imports WHERE warehouse=$1 AND checksum=$2",
-            [actor.warehouse, parsed.checksum],
+            [actor.warehouse, checksum],
           )
         ).rows[0];
         need(!duplicate, "This file has already been imported", 409);
         const id = randomUUID();
         await tx.query(
           "INSERT INTO master_imports(id,warehouse,checksum,created_by,row_count) VALUES($1,$2,$3,$4,$5)",
-          [id, actor.warehouse, parsed.checksum, actor.id, rows.length],
+          [id, actor.warehouse, checksum, actor.id, rows.length],
         );
-        for (const row of rows) {
+        const adjustments = [];
+        for (const row of [...rows].sort((a, b) => a.code.localeCompare(b.code))) {
           const existing = (
             await tx.query("SELECT * FROM products WHERE code=$1 FOR UPDATE", [
               row.code,
             ])
           ).rows[0];
           need(
-            !existing || existing.active,
-            `SKU ${row.code} is archived; do not overwrite archived history`,
+            reconcile ? existing && !existing.active : !existing || existing.active,
+            reconcile ? `SKU ${row.code} must already be archived; active or unknown SKU rejected` : `SKU ${row.code} is archived; do not overwrite archived history`,
             409,
           );
+          if (reconcile) {
+            const conflicts = await tx.query(
+              `SELECT 1 FROM inventory_ledger WHERE product=$1 AND NOT (warehouse=$2 AND location=$3 AND batch='') GROUP BY warehouse,location,batch HAVING sum(delta)<>0
+               UNION ALL SELECT 1 FROM inspections WHERE product=$1 AND status='PENDING'
+               UNION ALL SELECT 1 FROM inventory_reservations WHERE product=$1 AND status='ACTIVE'
+               UNION ALL SELECT 1 FROM operation_document_lines l JOIN operation_documents d ON d.id=l.document_id WHERE l.product=$1 AND d.status IN ('DRAFT','PENDING','VERIFIED')
+               UNION ALL SELECT 1 FROM stock_count_lines l JOIN stock_counts c ON c.id=l.count_id WHERE l.product=$1 AND c.status NOT IN ('COMPLETED','CANCELLED')`,
+              [row.code, actor.warehouse, input.location],
+            );
+            need(!conflicts.rows.length, `Cannot reactivate ${row.code}: stock outside selected warehouse/location/no-batch or unfinished work in any warehouse`, 409);
+            // Active-product triggers take shared product locks; retain this exclusive
+            // lock through reactivation, balance calculation, and ledger append.
+            await tx.query("UPDATE products SET active=true WHERE code=$1", [row.code]);
+          }
           await tx.query(
             "INSERT INTO products(code,name,uom,uom_factor) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,uom=EXCLUDED.uom,uom_factor=EXCLUDED.uom_factor",
             [
@@ -963,6 +993,17 @@ export async function handleWorkspace(ctx: Context) {
             "INSERT INTO product_batches(product,batch) VALUES($1,'') ON CONFLICT DO NOTHING",
             [row.code],
           );
+          if (reconcile) {
+            const before = await balance(tx, actor, input.location, row.code, "");
+            const delta = row.quantity - before;
+            need(Number.isSafeInteger(delta) && Math.abs(delta) <= 2147483647, "Reconciliation delta out of range");
+            if (delta)
+              await tx.query(
+                "INSERT INTO inventory_ledger(id,warehouse,location,product,batch,delta,actor,master_import_id) VALUES($1,$2,$3,$4,'',$5,$6,$7)",
+                [randomUUID(), actor.warehouse, input.location, row.code, delta, actor.id, id],
+              );
+            adjustments.push({ product: row.code, before, target: row.quantity, delta });
+          }
           if (input.opening) {
             need(
               !(
@@ -999,7 +1040,9 @@ export async function handleWorkspace(ctx: Context) {
               );
           }
         }
-        return { id, rows: rows.length, opening: input.opening };
+        return { id, rows: rows.length, opening: input.opening,
+          ...(reconcile ? { mode: input.mode, reason: input.reason.trim(), warehouse: actor.warehouse, location: input.location, batch: "", checksum: parsed.checksum, adjustments } : {}),
+        };
       }),
       201,
     );
