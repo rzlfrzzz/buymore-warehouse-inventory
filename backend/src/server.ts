@@ -14,7 +14,7 @@ try {
     const version = await db.transaction((tx) =>
       tx.query("SELECT max(version) AS version FROM schema_migrations"),
     );
-    if (version.rows[0]?.version !== 9)
+    if (version.rows[0]?.version !== 10)
       throw new Error("Run migrations before starting production");
   }
   const server = await createApi(db, {

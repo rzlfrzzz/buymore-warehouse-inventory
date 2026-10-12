@@ -64,7 +64,7 @@ test("empty counts, 501-line count, catalog guards and truncate protection", asy
       (await service.approve(head, "large-approve", count.id)).status,
       "COMPLETED",
     );
-    await assert.rejects(db.exec("TRUNCATE inventory_ledger"), /Append-only/);
+    await assert.rejects(db.exec("TRUNCATE inventory_ledger CASCADE"), /Append-only/);
     await assert.rejects(
       db.query(
         "INSERT INTO inventory_ledger(id,warehouse,location,product,delta,actor) VALUES ($1,'W','BIG','P1',2147483647,'fixture')",

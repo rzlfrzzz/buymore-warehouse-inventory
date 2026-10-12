@@ -10,5 +10,7 @@ GRANT UPDATE(id) ON locations TO buymore_app;
 GRANT DELETE ON sessions,login_attempts TO buymore_app;
 GRANT SELECT,INSERT,UPDATE ON user_pins TO buymore_app;
 GRANT UPDATE(id) ON users TO buymore_app;
+GRANT SELECT,INSERT ON stock_outs,stock_out_movements TO buymore_app;
+GRANT UPDATE(user_id) ON memberships TO buymore_app;
 GRANT INSERT ON inventory_ledger,adjustment_lines,audit_events,security_events,command_receipts,operation_document_lines,export_jobs,export_job_items,export_adjustment_items TO buymore_app;
 REVOKE UPDATE,DELETE,TRUNCATE ON inventory_ledger,adjustment_lines,audit_events,security_events,command_receipts FROM buymore_app;

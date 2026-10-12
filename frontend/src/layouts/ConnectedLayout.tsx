@@ -88,6 +88,7 @@ export function ConnectedLayout({
                 group: "PENGELOLAAN",
               },
               { id: "export", label: "Ekspor PO / SR", icon: Download },
+              { id: "issue", label: "Stock Out", icon: ArrowUpFromLine },
               { id: "settings", label: "Pengguna", icon: Settings2 },
             ]
           : []),

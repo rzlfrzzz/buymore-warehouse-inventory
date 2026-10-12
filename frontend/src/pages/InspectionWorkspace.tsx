@@ -17,6 +17,7 @@ import { ReferencePhoto, ExportComposer } from "./InspectionTools";
 import { ProductThumbnail } from "./ProductThumbnail";
 import { InspectionThumbnail } from "./InspectionThumbnail";
 import { AccountPin } from "./AccountPin";
+import { StockOutWorkspace } from "./StockOutWorkspace";
 type Product = { code: string; name: string; uom: string; uom_factor: number };
 type Catalog = {
   products: Product[];
@@ -487,6 +488,7 @@ export function InspectionWorkspace({
         (
           {
             inspect: "counts",
+            stockOut: "issue",
             history: "reports",
             master: "inventory",
             users: "settings",
@@ -499,6 +501,7 @@ export function InspectionWorkspace({
           (
             {
               counts: "inspect",
+              issue: "stockOut",
               reports: "history",
               inventory: "master",
               settings: "users",
@@ -562,6 +565,7 @@ export function InspectionWorkspace({
             {notice}
           </div>
         )}
+        {admin && tab === "stockOut" && <StockOutWorkspace key={warehouse} warehouse={warehouse} refresh={() => load()} setBusy={setBusy} />}
         {tab === "inspect" && (
           <section className="inspection-grid">
             <div>

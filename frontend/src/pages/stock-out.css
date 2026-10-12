@@ -1,0 +1,10 @@
+.stock-out-workspace { display: grid; gap: 24px; min-width: 0; }
+.stock-out-fields { border: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.stock-out-fields label { display: grid; gap: 6px; }
+.stock-out-fields input, .stock-out-fields select { width: 100%; min-width: 0; padding: 10px; border: 1px solid #cdded4; border-radius: 8px; background: #fff; color: #173f2b; }
+.stock-out-fields input[readonly] { background: #f0f6f2; }
+.stock-out-fields p { grid-column: 1 / -1; }
+.stock-out-table { overflow-x: auto; }
+.stock-out-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.stock-out-table th, .stock-out-table td { padding: 12px; border-bottom: 1px solid #dce8df; vertical-align: top; }
+@media (max-width: 600px) { .stock-out-fields { grid-template-columns: 1fr; } }

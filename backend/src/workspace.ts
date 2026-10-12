@@ -528,6 +528,50 @@ export async function handleWorkspace(ctx: Context) {
     );
   }
   admin(ctx);
+  if (path === "/api/workspace/stock-outs" && method === "GET") {
+    return send(await db.transaction(async (tx) => ({
+      records: (await tx.query("SELECT s.*,u.username AS recorder FROM stock_outs s JOIN users u ON u.id=s.recorded_by WHERE s.warehouse=$1 ORDER BY s.recorded_at DESC,s.id DESC LIMIT 200", [actor.warehouse])).rows,
+      destinations: (await tx.query("SELECT l.warehouse,l.id AS location FROM locations l JOIN memberships m ON m.warehouse=l.warehouse WHERE m.user_id=$1 AND m.role='Admin' AND l.warehouse<>$2 ORDER BY l.warehouse,l.id", [actor.id, actor.warehouse])).rows,
+    })));
+  }
+  if (path === "/api/workspace/stock-outs" && method === "POST") {
+    const input = await ctx.body(ctx.req);
+    fields(input, ["product", "location", "batch", "unit", "quantity", "purpose", "destinationWarehouse", "destinationLocation", "taker", "takenAt"]);
+    const product = text(input.product, "SKU", 64), location = text(input.location, "location", 200);
+    const unit = text(input.unit, "unit", 64), taker = text(input.taker, "taker");
+    const quantity = integer(input.quantity, "quantity", 1);
+    need(typeof input.batch === "string" && input.batch.length <= 200, "Invalid batch");
+    need(input.purpose === "PRODUCTION" || input.purpose === "TRANSFER", "Invalid purpose");
+    need(typeof input.takenAt === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(input.takenAt) && Number.isFinite(Date.parse(input.takenAt)), "Invalid takenAt; timezone required");
+    const transfer = input.purpose === "TRANSFER";
+    const destinationWarehouse = transfer ? text(input.destinationWarehouse, "destination warehouse") : null;
+    const destinationLocation = transfer ? text(input.destinationLocation, "destination location") : null;
+    need(transfer ? destinationWarehouse !== actor.warehouse : input.destinationWarehouse == null && input.destinationLocation == null, "Invalid destination");
+    return send(await command(ctx, "stock-out.post", input, async (tx) => {
+      if (transfer) need((await tx.query("SELECT 1 FROM memberships WHERE user_id=$1 AND warehouse=$2 AND role='Admin' FOR SHARE", [actor.id, destinationWarehouse])).rows.length, "Destination Admin membership required", 403);
+      // Lock all locations in a stable order before balance checks and ledger triggers.
+      const targets = [{ warehouse: actor.warehouse, location }, ...(transfer ? [{ warehouse: destinationWarehouse!, location: destinationLocation! }] : [])];
+      targets.sort((a,b) => a.warehouse < b.warehouse ? -1 : a.warehouse > b.warehouse ? 1 : a.location < b.location ? -1 : 1);
+      for (const target of targets) await lockLocation(tx, { ...actor, warehouse: target.warehouse }, target.location);
+      const item = (await tx.query("SELECT * FROM products WHERE code=$1 AND active FOR SHARE", [product])).rows[0];
+      need(item, "Unknown or archived product");
+      need(unit === "PCS" || unit === item.uom, "Unit not in catalog");
+      const factor = unit === "PCS" ? 1 : item.uom_factor;
+      const base = integer(quantity * factor, "base quantity", 1);
+      need((await tx.query("SELECT 1 FROM product_batches WHERE product=$1 AND batch=$2", [product, input.batch])).rows.length, "Unknown batch");
+      const available = (await tx.query("SELECT available_stock($1,$2,$3,$4) AS quantity", [actor.warehouse, location, product, input.batch])).rows[0].quantity;
+      need(available >= base, "Insufficient available stock (reserved stock excluded)", 409);
+      const id = randomUUID();
+      const result = (await tx.query("INSERT INTO stock_outs(id,warehouse,location,product,product_name,batch,unit,factor,quantity,base_quantity,purpose,destination_warehouse,destination_location,taker,taken_at,recorded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *", [id,actor.warehouse,location,product,item.name,input.batch,unit,factor,quantity,base,input.purpose,destinationWarehouse,destinationLocation,taker,input.takenAt,actor.id])).rows[0];
+      for (const target of targets) {
+        const source = target.warehouse === actor.warehouse;
+        const ledgerId = randomUUID();
+        await tx.query("INSERT INTO inventory_ledger(id,warehouse,location,product,batch,delta,actor) VALUES($1,$2,$3,$4,$5,$6,$7)", [ledgerId,target.warehouse,target.location,product,input.batch,source ? -base : base,actor.id]);
+        await tx.query("INSERT INTO stock_out_movements(stock_out_id,ledger_id,leg) VALUES($1,$2,$3)", [id,ledgerId,source ? "SOURCE" : "DESTINATION"]);
+      }
+      return result;
+    }), 201);
+  }
   if (method === "POST" && path === "/api/workspace/reference-photos") {
     const input = await ctx.body(ctx.req);
     fields(input, ["product", "mime", "content", "remove"]);
