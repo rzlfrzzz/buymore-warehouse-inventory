@@ -416,7 +416,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       403,
     );
     const thumb = "/workspace/thumbnails/000123";
-    assert.deepEqual((await request(thumb, uc)).body, image);
+    assert.equal((await request(thumb, uc)).body, null);
     assert.equal((await request(thumb, oc)).body, null);
     assert.equal(
       (await request("/workspace/thumbnails/000124", ac)).body,
@@ -436,7 +436,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       ).status,
       201,
     );
-    assert.deepEqual((await request(thumb, uc)).body, png);
+    assert.equal((await request(thumb, uc)).body, null);
     const newest = await request("/workspace/photos", oc, image);
     assert.equal(
       (
@@ -447,9 +447,9 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       ).status,
       201,
     );
-    assert.deepEqual((await request(thumb, uc)).body, png);
-    assert.deepEqual((await request(thumb, ac)).body, image);
-    assert.deepEqual((await request(thumb, oc)).body, image);
+    assert.equal((await request(thumb, uc)).body, null);
+    assert.equal((await request(thumb, ac)).body, null);
+    assert.equal((await request(thumb, oc)).body, null);
     assert.equal(
       (await request(thumb, uc, undefined, randomUUID(), "X")).status,
       403,
@@ -530,7 +530,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
       (await request("/workspace/reference-photos/000123", uc)).body,
       null,
     );
-    assert.deepEqual((await request(thumb, ac)).body, image);
+    assert.equal((await request(thumb, ac)).body, null);
     assert.equal(
       (await request("/workspace/products/archive", uc, { product: "000124" }))
         .status,

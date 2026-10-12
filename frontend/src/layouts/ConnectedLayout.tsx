@@ -68,11 +68,12 @@ export function ConnectedLayout({
   const role = session.memberships.find((m) => m.warehouse === warehouse)?.role;
   const navigation = inspectionMode
     ? ([
+      { id: "dashboard", label: "Ringkasan", icon: LayoutDashboard, group: "WORKSPACE" },
+      { id: "issue", label: "Stock Out", icon: ArrowUpFromLine },
         {
           id: "counts",
           label: "Stock count",
           icon: ClipboardCheck,
-          group: "WORKSPACE",
         },
         {
           id: "reports",
@@ -88,7 +89,6 @@ export function ConnectedLayout({
                 group: "PENGELOLAAN",
               },
               { id: "export", label: "Ekspor PO / SR", icon: Download },
-              { id: "issue", label: "Stock Out", icon: ArrowUpFromLine },
               { id: "settings", label: "Pengguna", icon: Settings2 },
             ]
           : []),

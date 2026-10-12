@@ -54,7 +54,7 @@ describe("production inspection UI", () => {
     const user = renderToStaticMarkup(
       <ReferencePhoto product="0001" warehouse="W" />,
     );
-    expect(user).toContain("Foto referensi sebelumnya");
+    expect(user).toContain("Foto default produk / referensi Admin");
     expect(user).not.toContain("Hapus foto");
     const admin = renderToStaticMarkup(
       <ReferencePhoto product="0001" warehouse="W" admin />,

@@ -166,6 +166,26 @@ it("real API and DOM: Admin creates master, User reads same warehouse, logout/lo
     expect(host.textContent).toContain("Imported through DOM");
     expect(host.textContent).not.toContain("Hapus SKU");
     expect(host.textContent).not.toContain("Master & impor");
+    const recorder = (await engine.query("SELECT id FROM users WHERE username='user'")).rows[0].id;
+    await engine.query("INSERT INTO locations(warehouse,id) VALUES('W','OUT') ON CONFLICT DO NOTHING");
+    await engine.query("INSERT INTO inventory_ledger(id,warehouse,location,product,batch,delta,actor) VALUES($1,'W','OUT','IMPORTED','',3,$2)",[randomUUID(),recorder]);
+    await click("Stock Out");
+    await fill("Cari material SKU / nama", "Imported through DOM");
+    for (const [label, value] of [["SKU", "IMPORTED"], ["Lokasi sumber", "OUT"]]) {
+      const select = [...host.querySelectorAll("label")].find(l => l.firstChild?.textContent === label)!.querySelector("select")!;
+      await act(async () => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", {bubbles:true}));
+      });
+    }
+    await fill("Jumlah diambil", "3");
+    await fill("Nama pengambil", "User integration taker");
+    await click("Catat Stock Out");
+    expect(host.textContent).toContain("User integration taker");
+    expect((await engine.query("SELECT base_quantity,recorded_by FROM stock_outs")).rows).toEqual([{base_quantity:3,recorded_by:recorder}]);
+    expect((await engine.query("SELECT sum(delta)::int AS pcs FROM inventory_ledger WHERE warehouse='W' AND product='IMPORTED'")).rows[0].pcs).toBe(0);
+    await click("Ringkasan");
+    expect(host.textContent).toContain("3 PCS / 1 transaksi");
     await click("Keluar");
     await login("admin");
     await click("Master & impor");

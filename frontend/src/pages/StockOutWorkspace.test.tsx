@@ -24,6 +24,14 @@ it("renders catalog form and timezone history, posts taker separately and refres
         element.dispatchEvent(new Event(element.tagName==="SELECT" ? "change" : "input",{bubbles:true}));
       });
     }
+    await change("Cari material", "no match");
+    expect(host.querySelectorAll("select")[0].options.length).toBe(1);
+    await change("Cari material", "Catalog name");
+    expect(host.querySelectorAll("select")[0].options.length).toBe(2);
+    await change("Cari riwayat", "no match");
+    expect(host.querySelectorAll("tbody tr").length).toBe(0);
+    await change("Cari riwayat", "Warehouse taker");
+    expect(host.querySelectorAll("tbody tr").length).toBe(1);
     await change("SKU","SKU"); await change("Lokasi sumber","A"); await change("Jumlah diambil","2"); await change("Nama pengambil","Actual person");
     expect(host.querySelector<HTMLInputElement>("input[readonly]")!.value).toBe("Catalog name");
     await act(async () => {host.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true}));});
@@ -34,14 +42,16 @@ it("renders catalog form and timezone history, posts taker separately and refres
   } finally {await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals();}
 });
 
-it("only exposes Stock Out navigation to Admin in the active layout", async () => {
+it("exposes Ringkasan and Stock Out to User and Admin in the active layout", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
   const host=document.createElement("div"), root=createRoot(host), navigate=vi.fn();
   try {
     for(const role of ["Admin","User"] as const) {
       await act(async () => root.render(<ConnectedLayout inspectionMode session={{user:{id:"u",username:"operator"},memberships:[{warehouse:"WH",role}]}} warehouse="WH" setWarehouse={() => {}} page="counts" navigate={navigate} logout={() => {}} busy={false}><p>Workspace</p></ConnectedLayout>));
       const button=[...host.querySelectorAll("nav button")].find(b => b.textContent==="Stock Out");
-      expect(Boolean(button)).toBe(role==="Admin");
+      expect(Boolean(button)).toBe(true);
+      const summary=[...host.querySelectorAll("nav button")].find(b => b.textContent==="Ringkasan") as HTMLButtonElement;
+      await act(async () => summary.click()); expect(navigate).toHaveBeenCalledWith("dashboard");
       if(button) {await act(async () => (button as HTMLButtonElement).click()); expect(navigate).toHaveBeenCalledWith("issue");}
     }
   } finally {await act(async () => root.unmount()); vi.unstubAllGlobals();}

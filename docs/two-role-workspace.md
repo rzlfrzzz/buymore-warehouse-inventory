@@ -14,7 +14,7 @@ Regression commands: frontend `npm test` exercises actual DOM clicks with jsdom;
 
 ## Reviewable assumptions (not approved business decisions)
 
-1. User submits observed stock with a live photo. Official stock changes only after Admin approval. The user requested suggestions before final agreement; retain this safe provisional behavior until reviewed.
+1. User submits observed stock with a live photo. Inspection stock changes require Admin approval. Stock Out is a separate direct-posting workflow available to User and Admin under WORKSPACE, with membership in both warehouses required for transfers and all stock constraints retained. Ringkasan aggregates outgoing materials for the authorized selected warehouse; see [Stock Out](stock-out.md).
 2. User chooses PCS or the product unit defined by Admin. User cannot edit unit names, conversion factors, SKU, or product names.
 3. Product identity/name/conversion are shared catalog data, as in the existing schema. Admin membership authorizes shared master maintenance; inventory, user creation, photos and approvals remain scoped to the selected warehouse. Review whether separate per-warehouse product ownership is required.
 4. A unit conversion with historical movements, legacy count lines, transaction lines, or inspections cannot be changed. Create a new SKU for a different base-unit meaning. Existing immutable ledger and posted history remain intact.

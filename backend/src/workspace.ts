@@ -52,6 +52,7 @@ async function command(
   action: string,
   input: unknown,
   run: (tx: DB) => Promise<any>,
+  authorize?: (tx: DB) => Promise<void>,
 ) {
   const raw = ctx.req.headers["idempotency-key"];
   need(
@@ -63,6 +64,7 @@ async function command(
     .update(JSON.stringify({ action, input }))
     .digest("hex");
   return ctx.db.transaction(async (tx) => {
+    await authorize?.(tx);
     await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
     const prior = (
       await tx.query("SELECT * FROM command_receipts WHERE key=$1", [key])
@@ -485,17 +487,7 @@ export async function handleWorkspace(ctx: Context) {
           [actor.warehouse, product],
         )
       ).rows[0];
-      if (reference) return reference;
-      // Filter before LIMIT: a newer private capture must not hide an older accessible one.
-      return (
-        await tx.query(
-          `SELECT p.mime,p.content FROM inspections i
-         JOIN inspection_photos p ON p.id=i.photo AND p.warehouse=i.warehouse
-         WHERE i.warehouse=$1 AND i.product=$2 AND (p.owner=$3 OR $4='Admin')
-         ORDER BY p.created_at DESC,i.created_at DESC,p.id DESC LIMIT 1`,
-          [actor.warehouse, product, actor.id, actor.role],
-        )
-      ).rows[0];
+      return reference;
     });
     return send(
       result
@@ -527,12 +519,38 @@ export async function handleWorkspace(ctx: Context) {
         : null,
     );
   }
-  admin(ctx);
+  async function stockOutAccess(tx: DB, destination?: string | null) {
+    need(["User", "Admin"].includes(actor.role), "Stock Out access denied", 403);
+    // Revalidate and lock memberships before reading receipts or changing stock.
+    const warehouses = [...new Set([actor.warehouse, ...(destination ? [destination] : [])])].sort();
+    for (const warehouse of warehouses) {
+      need((await tx.query("SELECT 1 FROM memberships WHERE user_id=$1 AND warehouse=$2 AND role IN ('User','Admin') FOR SHARE", [actor.id, warehouse])).rows.length, "Warehouse membership required", 403);
+    }
+  }
+  if (path === "/api/workspace/stock-out-summary" && method === "GET") {
+    const end = ctx.url.searchParams.get("to") || new Date().toISOString().slice(0, 10);
+    const start = ctx.url.searchParams.get("from") || new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+    need(validDate(start) && validDate(end) && start <= end, "Invalid date period");
+    const search = (ctx.url.searchParams.get("search") || "").trim();
+    need(search.length <= 200, "Search too long");
+    return send(await db.transaction(async (tx) => {
+      await stockOutAccess(tx);
+      const filter = `warehouse=$1 AND taken_at >= ($2::date::timestamp AT TIME ZONE 'UTC') AND taken_at < (($3::date + interval '1 day') AT TIME ZONE 'UTC') AND ($4='' OR strpos(lower(concat_ws(' ',product,product_name,taker,purpose,CASE WHEN purpose='PRODUCTION' THEN 'produksi' ELSE 'transfer' END)),lower($4))>0)`;
+      const params = [actor.warehouse, start, end, search];
+      const totals = (await tx.query(`SELECT count(*)::int AS count, COALESCE(sum(base_quantity),0)::float8 AS pcs, count(*) FILTER (WHERE purpose='PRODUCTION')::int AS production_count, COALESCE(sum(base_quantity) FILTER (WHERE purpose='PRODUCTION'),0)::float8 AS production_pcs, count(*) FILTER (WHERE purpose='TRANSFER')::int AS transfer_count, COALESCE(sum(base_quantity) FILTER (WHERE purpose='TRANSFER'),0)::float8 AS transfer_pcs FROM stock_outs WHERE ${filter}`, params)).rows[0];
+      const items = (await tx.query(`SELECT product,product_name,count(*)::int AS count,sum(base_quantity)::float8 AS pcs, COALESCE(sum(base_quantity) FILTER (WHERE purpose='PRODUCTION'),0)::float8 AS production_pcs, COALESCE(sum(base_quantity) FILTER (WHERE purpose='TRANSFER'),0)::float8 AS transfer_pcs FROM stock_outs WHERE ${filter} GROUP BY product,product_name ORDER BY pcs DESC,product,product_name LIMIT 200`, params)).rows;
+      return { from: start, to: end, totals, items, itemLimit: 200 };
+    }));
+  }
   if (path === "/api/workspace/stock-outs" && method === "GET") {
-    return send(await db.transaction(async (tx) => ({
-      records: (await tx.query("SELECT s.*,u.username AS recorder FROM stock_outs s JOIN users u ON u.id=s.recorded_by WHERE s.warehouse=$1 ORDER BY s.recorded_at DESC,s.id DESC LIMIT 200", [actor.warehouse])).rows,
-      destinations: (await tx.query("SELECT l.warehouse,l.id AS location FROM locations l JOIN memberships m ON m.warehouse=l.warehouse WHERE m.user_id=$1 AND m.role='Admin' AND l.warehouse<>$2 ORDER BY l.warehouse,l.id", [actor.id, actor.warehouse])).rows,
-    })));
+    return send(await db.transaction(async (tx) => {
+      await stockOutAccess(tx);
+      return {
+        records: (await tx.query("SELECT s.*,u.username AS recorder, CASE WHEN m.user_id IS NOT NULL THEN s.destination_warehouse END AS destination_warehouse, CASE WHEN m.user_id IS NOT NULL THEN s.destination_location END AS destination_location FROM stock_outs s JOIN users u ON u.id=s.recorded_by LEFT JOIN memberships m ON m.user_id=$2 AND m.warehouse=s.destination_warehouse AND m.role IN ('User','Admin') WHERE s.warehouse=$1 ORDER BY s.recorded_at DESC,s.id DESC LIMIT 200", [actor.warehouse, actor.id])).rows,
+        destinations: (await tx.query("SELECT l.warehouse,l.id AS location FROM locations l JOIN memberships m ON m.warehouse=l.warehouse WHERE m.user_id=$1 AND m.role IN ('User','Admin') AND l.warehouse<>$2 ORDER BY l.warehouse,l.id", [actor.id, actor.warehouse])).rows,
+      };
+    }));
   }
   if (path === "/api/workspace/stock-outs" && method === "POST") {
     const input = await ctx.body(ctx.req);
@@ -548,7 +566,6 @@ export async function handleWorkspace(ctx: Context) {
     const destinationLocation = transfer ? text(input.destinationLocation, "destination location") : null;
     need(transfer ? destinationWarehouse !== actor.warehouse : input.destinationWarehouse == null && input.destinationLocation == null, "Invalid destination");
     return send(await command(ctx, "stock-out.post", input, async (tx) => {
-      if (transfer) need((await tx.query("SELECT 1 FROM memberships WHERE user_id=$1 AND warehouse=$2 AND role='Admin' FOR SHARE", [actor.id, destinationWarehouse])).rows.length, "Destination Admin membership required", 403);
       // Lock all locations in a stable order before balance checks and ledger triggers.
       const targets = [{ warehouse: actor.warehouse, location }, ...(transfer ? [{ warehouse: destinationWarehouse!, location: destinationLocation! }] : [])];
       targets.sort((a,b) => a.warehouse < b.warehouse ? -1 : a.warehouse > b.warehouse ? 1 : a.location < b.location ? -1 : 1);
@@ -570,8 +587,9 @@ export async function handleWorkspace(ctx: Context) {
         await tx.query("INSERT INTO stock_out_movements(stock_out_id,ledger_id,leg) VALUES($1,$2,$3)", [id,ledgerId,source ? "SOURCE" : "DESTINATION"]);
       }
       return result;
-    }), 201);
+    }, tx => stockOutAccess(tx, destinationWarehouse)), 201);
   }
+  admin(ctx);
   if (method === "POST" && path === "/api/workspace/reference-photos") {
     const input = await ctx.body(ctx.req);
     fields(input, ["product", "mime", "content", "remove"]);

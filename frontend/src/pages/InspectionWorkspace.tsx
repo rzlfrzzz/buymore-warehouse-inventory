@@ -18,6 +18,7 @@ import { ProductThumbnail } from "./ProductThumbnail";
 import { InspectionThumbnail } from "./InspectionThumbnail";
 import { AccountPin } from "./AccountPin";
 import { StockOutWorkspace } from "./StockOutWorkspace";
+import { OutgoingSummary } from "./OutgoingSummary";
 type Product = { code: string; name: string; uom: string; uom_factor: number };
 type Catalog = {
   products: Product[];
@@ -488,6 +489,7 @@ export function InspectionWorkspace({
         (
           {
             inspect: "counts",
+            summary: "dashboard",
             stockOut: "issue",
             history: "reports",
             master: "inventory",
@@ -501,6 +503,7 @@ export function InspectionWorkspace({
           (
             {
               counts: "inspect",
+              dashboard: "summary",
               issue: "stockOut",
               reports: "history",
               inventory: "master",
@@ -551,7 +554,7 @@ export function InspectionWorkspace({
         <aside className="inspection-assumption">
           <ShieldCheck size={18} />
           <span>
-            Stok resmi berubah setelah persetujuan Admin. User memilih satuan
+            Inspeksi mengubah stok setelah persetujuan Admin; Stock Out langsung memperbarui stok. User memilih satuan
             yang ditetapkan Admin, bukan mengubah konversi.
           </span>
         </aside>
@@ -565,7 +568,8 @@ export function InspectionWorkspace({
             {notice}
           </div>
         )}
-        {admin && tab === "stockOut" && <StockOutWorkspace key={warehouse} warehouse={warehouse} refresh={() => load()} setBusy={setBusy} />}
+        {tab === "summary" && <OutgoingSummary key={warehouse} warehouse={warehouse} />}
+        {tab === "stockOut" && <StockOutWorkspace key={warehouse} warehouse={warehouse} refresh={() => load()} setBusy={setBusy} />}
         {tab === "inspect" && (
           <section className="inspection-grid">
             <div>
@@ -863,6 +867,7 @@ export function InspectionWorkspace({
                           warehouse={warehouse}
                           inspection={i.id}
                         />
+                        <span>Bukti inspeksi</span>
                         <button
                           disabled={!i.photo}
                           onClick={() =>
@@ -1124,6 +1129,7 @@ export function InspectionWorkspace({
                   </option>
                 ))}
               </select>
+              <p>Pilih SKU yang sudah ada untuk unggah / ganti foto default produk (referensi Admin). Bukti inspeksi tidak digunakan sebagai foto produk.</p>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();

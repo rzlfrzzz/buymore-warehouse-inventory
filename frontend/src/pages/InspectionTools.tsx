@@ -66,7 +66,7 @@ export function ReferencePhoto({
   }
   return (
     <section aria-label="Foto referensi" className="inspection-reference">
-      <h3>Foto referensi sebelumnya</h3>
+      <h3>Foto default produk / referensi Admin</h3>
       {photo ? (
         <img
           className="inspection-evidence"

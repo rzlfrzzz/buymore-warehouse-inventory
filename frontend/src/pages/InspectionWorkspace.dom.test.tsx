@@ -225,6 +225,20 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("active inspection DOM", () => {
+  it.each(["User", "Admin"] as const)("opens outgoing summary and posting in the active workspace as %s", async (role) => {
+    const fetch = mockApi((path) => {
+      if (path.includes("/stock-out-summary?")) return response({totals:{count:203,pcs:216,production_count:202,production_pcs:211,transfer_count:1,transfer_pcs:5},items:[]});
+      if (path.endsWith("/stock-outs")) return response({records:[],destinations:[]});
+    });
+    await mount(role);
+    await click("Ringkasan");
+    expect(host.textContent).toContain("216 PCS / 203 transaksi");
+    expect(fetch.mock.calls.find(([url]) => String(url).includes("/stock-out-summary?"))?.[1]?.headers).toMatchObject({"X-Warehouse":"W"});
+    await click("Stock Out");
+    expect(host.textContent).toContain("Catat Stock Out");
+    expect(host.querySelectorAll('input[type="search"]').length).toBe(2);
+    expect(button("Catat Stock Out").closest("fieldset")?.disabled).toBe(false);
+  });
   it("posts username and exact six-digit PIN without a password", async () => {
     const fetch = mockApi();
     await mount(null);
