@@ -8,6 +8,7 @@ import { migrate, type Runtime } from "../src/runtime.js";
 import type { DB } from "../src/stock-count.js";
 import { parseMaster } from "../src/workspace.js";
 import ExcelJS from "exceljs";
+import sharp from "sharp";
 const origin = "http://127.0.0.1:5173";
 test("two-role workspace: master import, private photos, inspection approvals, safe retries and rollback", async () => {
   const engine = new PGlite();
@@ -316,8 +317,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
     );
     const image = {
       mime: "image/png",
-      content:
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
+      content: (await sharp({ create: { width: 1, height: 1, channels: 3, background: "white" } }).png().toBuffer()).toString("base64"),
     };
     const pk = randomUUID(),
       p = await request("/workspace/photos", uc, image, pk);
@@ -403,8 +403,7 @@ test("two-role workspace: master import, private photos, inspection approvals, s
     );
     const png = {
       mime: "image/png",
-      content:
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=",
+      content: (await sharp({ create: { width: 1, height: 1, channels: 3, background: "black" } }).png().toBuffer()).toString("base64"),
     };
     assert.equal(
       (

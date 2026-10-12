@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../services/api";
+import { photoUploadMime } from "../utils/photoUpload";
 type Photo = { mime: string; content: string } | null;
 export function ReferencePhoto({
   product,
@@ -38,18 +39,14 @@ export function ReferencePhoto({
     try {
       let input: Record<string, unknown> = { product, remove: true };
       if (file) {
-        if (
-          file.size > 2097152 ||
-          !["image/jpeg", "image/png"].includes(file.type)
-        )
-          throw new Error("Gunakan JPEG / PNG maksimal 2 MB.");
+        const mime = photoUploadMime(file);
         const content = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result).split(",")[1]);
           reader.onerror = () => reject(new Error("File tidak dapat dibaca"));
           reader.readAsDataURL(file);
         });
-        input = { product, mime: file.type, content };
+        input = { product, mime, content };
       }
       await api(
         "/workspace/reference-photos",
@@ -97,7 +94,7 @@ export function ReferencePhoto({
           </button>
           <p>
             Foto referensi khusus gudang ini. Bukti inspeksi historis tidak
-            diubah.
+            diubah. JPEG / PNG maksimal 2 MB dan 25 megapiksel.
           </p>
         </>
       )}

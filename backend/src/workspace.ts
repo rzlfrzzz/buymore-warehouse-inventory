@@ -6,6 +6,7 @@ import type { Runtime } from "./runtime.js";
 import type { Actor, DB } from "./stock-count.js";
 import { DomainError } from "./errors.js";
 import { hashPassword } from "./auth.js";
+import { validatePhoto } from "./photo.js";
 import { buildWorkbook, knownHeaders, loadTemplate } from "./bigseller.js";
 type Context = {
   req: IncomingMessage;
@@ -312,23 +313,13 @@ export async function handleWorkspace(ctx: Context) {
     const input = await ctx.body(ctx.req);
     fields(input, ["mime", "content"]);
     const data = bytes(input.content, 2097152);
-    need(
-      (input.mime === "image/jpeg" &&
-        data.subarray(0, 3).equals(Buffer.from([255, 216, 255])) &&
-        data.subarray(-2).equals(Buffer.from([255, 217]))) ||
-        (input.mime === "image/png" &&
-          data
-            .subarray(0, 8)
-            .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
-          data.subarray(-8).toString("hex") === "49454e44ae426082"),
-      "Invalid JPEG or PNG capture",
-    );
+    const mime = await validatePhoto(data, input.mime, "capture");
     return send(
       await command(ctx, "photo.capture", input, async (tx) => {
         const id = randomUUID();
         await tx.query(
           "INSERT INTO inspection_photos(id,warehouse,owner,mime,content) VALUES($1,$2,$3,$4,$5)",
-          [id, actor.warehouse, actor.id, input.mime, data],
+          [id, actor.warehouse, actor.id, mime, data],
         );
         return { id };
       }),
@@ -595,16 +586,7 @@ export async function handleWorkspace(ctx: Context) {
     fields(input, ["product", "mime", "content", "remove"]);
     const product = text(input.product, "SKU", 64);
     const data = input.remove === true ? null : bytes(input.content, 2097152);
-    if (data)
-      need(
-        (input.mime === "image/jpeg" &&
-          data.subarray(0, 3).toString("hex") === "ffd8ff" &&
-          data.subarray(-2).toString("hex") === "ffd9") ||
-          (input.mime === "image/png" &&
-            data.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" &&
-            data.subarray(-8).toString("hex") === "49454e44ae426082"),
-        "Invalid JPEG or PNG reference photo",
-      );
+    const mime = data ? await validatePhoto(data, input.mime, "reference photo") : null;
     return send(
       await command(ctx, "reference-photo.save", input, async (tx) => {
         need(
@@ -625,7 +607,7 @@ export async function handleWorkspace(ctx: Context) {
         else
           await tx.query(
             "INSERT INTO product_reference_photos(warehouse,product,mime,content,updated_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(warehouse,product) DO UPDATE SET mime=EXCLUDED.mime,content=EXCLUDED.content,updated_by=EXCLUDED.updated_by,updated_at=now()",
-            [actor.warehouse, product, input.mime, data, actor.id],
+            [actor.warehouse, product, mime, data, actor.id],
           );
         return { product, removed: !data };
       }),

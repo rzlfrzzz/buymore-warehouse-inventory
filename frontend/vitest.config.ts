@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: [
+      "src/utils/photoUpload.test.ts",
       "src/services/api.test.ts",
       "src/services/overview.test.ts",
       "src/pages/ConnectedWorkspace.test.tsx",

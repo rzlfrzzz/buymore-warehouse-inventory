@@ -16,8 +16,9 @@
     "format:check": "prettier --check src test *.json"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "pg": "^8.16.3",
-    "exceljs": "^4.4.0"
+    "sharp": "^0.34.5"
   },
   "overrides": {
     "exceljs": {
@@ -28,8 +29,8 @@
     "@electric-sql/pglite": "^0.3.14",
     "@types/node": "^22.18.0",
     "@types/pg": "^8.15.5",
+    "prettier": "^3.6.2",
     "tsx": "^4.20.5",
-    "typescript": "~5.9.2",
-    "prettier": "^3.6.2"
+    "typescript": "~5.9.2"
   }
 }
